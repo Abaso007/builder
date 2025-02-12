@@ -1,22 +1,16 @@
-import { useState, setContext } from '@builder.io/mitosis';
+import { setContext, useMetadata, useState } from '@builder.io/mitosis';
 import BuilderContext from '../../../context/builder.context.lite.js';
-import type {
-  BuilderContextInterface,
-  RegisteredComponents,
-} from '../../../context/types.js';
-import type { BuilderBlock } from '../../../types/builder-block.js';
+import type { BuilderContextInterface } from '../../../context/types.js';
+import type { BlockProps } from '../block.lite.jsx';
 import Block from '../block.lite.jsx';
-import { useMetadata } from '@builder.io/mitosis';
 
-type Props = {
-  block: BuilderBlock;
+type Props = Omit<BlockProps, 'context'> & {
   repeatContext: BuilderContextInterface;
-  registeredComponents: RegisteredComponents;
 };
 
 useMetadata({
   options: {
-    vue3: {
+    vue: {
       asyncComponentImports: true,
     },
   },
@@ -44,6 +38,7 @@ export default function RepeatedBlock(props: Props) {
       block={props.block}
       context={store}
       registeredComponents={props.registeredComponents}
+      linkComponent={props.linkComponent}
     />
   );
 }

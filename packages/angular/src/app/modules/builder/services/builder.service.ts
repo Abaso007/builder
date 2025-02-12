@@ -1,5 +1,5 @@
 import { Injectable, Inject, Optional } from '@angular/core';
-import { RESPONSE, REQUEST } from '@nguniversal/express-engine/tokens';
+import { RESPONSE, REQUEST } from '../../../../express.tokens';
 import { Builder } from '@builder.io/sdk';
 import { HttpClient } from '@angular/common/http';
 import { Request, Response } from 'express';
@@ -61,13 +61,14 @@ export class BuilderService extends Builder {
     }
 
     if (apiKey) {
+      this.apiVersion = 'v3';
       this.init(apiKey);
     }
 
     if (!Builder.isBrowser && !this.request) {
       console.warn(
         'No express request set! Builder cannot target appropriately without this, ' +
-          'please contact help@builder.io to learn how to set this as required'
+          'please contact support@builder.io to learn how to set this as required'
       );
     }
   }

@@ -1,4 +1,4 @@
-import { registerCommercePlugin, Resource } from '@builder.io/commerce-plugin-tools';
+import { registerCommercePlugin } from '@builder.io/plugin-tools';
 import pkg from '../package.json';
 import appState from '@builder.io/app-context';
 import { Api, getRecommenders } from './api';
@@ -24,6 +24,7 @@ registerCommercePlugin(
         name: 'clientId',
         type: 'string',
         required: true,
+        friendlyName:'Public Client ID',
       },
       {
         name: 'organizationId',
@@ -33,7 +34,13 @@ registerCommercePlugin(
       {
         name: 'proxy',
         type: 'string',
-        required: true,
+        required: false,
+      },
+      {
+        name: 'redirectURI',
+        type: 'string',
+        required: false,
+        helperText: 'redirectURI must be configured by SLAS admin',
       },
       {
         name: 'shortCode',
@@ -55,8 +62,24 @@ registerCommercePlugin(
         friendlyName: 'Einstein API Site ID',
         type: 'string',
       },
+      {
+        name: 'navDepth',
+        type: 'number',
+        helperText: 'This will be used in category search. If you enter nav depth greater than 3 there could be performance implications',
+      },
+      {
+        name: 'rootCategory',
+        type: 'string', 
+      },
     ],
     ctaText: `Connect your Salesforce Commerce API`,
+    onSave: async () => {
+      appState.snackBar.display({
+        message: 'Validating Config Details...'
+      });
+      const api = new Api(appState.user.apiKey, pkg.name);
+      await api.validateConfig();
+    }
   },
   async settings => {
     const api = new Api(appState.user.apiKey, pkg.name);
@@ -90,7 +113,7 @@ registerCommercePlugin(
           return await api.getProduct(id);
         },
         async search(search: string) {
-          return await api.search(search || 'womens');
+          return await api.search(search || '');
         },
         getRequestObject(id: string) {
           return {

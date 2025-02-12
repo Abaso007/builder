@@ -1,9 +1,9 @@
 export type Target =
-  | 'vue3'
-  | 'vue2'
+  | 'vue'
   | 'reactNative'
   | 'svelte'
   | 'qwik'
   | 'react'
   | 'solid'
-  | 'rsc';
+  | 'rsc'
+  | 'angular';

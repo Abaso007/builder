@@ -1,24 +1,24 @@
 import {
   For,
-  useStore,
   Show,
   onMount,
-  useTarget,
   useMetadata,
+  useStore,
+  useTarget,
 } from '@builder.io/mitosis';
-import {
-  checkShouldRunVariants,
-  getScriptString,
-  getVariants,
-  getVariantsScriptString,
-} from './helpers.js';
-import ContentComponent from '../content/content.lite.jsx';
-import { getDefaultCanTrack } from '../../helpers/canTrack.js';
-import InlinedStyles from '../inlined-styles.lite.jsx';
-import { handleABTestingSync } from '../../helpers/ab-tests.js';
-import InlinedScript from '../inlined-script.lite.jsx';
 import { TARGET } from '../../constants/target.js';
+import { handleABTestingSync } from '../../helpers/ab-tests.js';
+import { getDefaultCanTrack } from '../../helpers/canTrack.js';
+import ContentComponent from '../content/content.lite.jsx';
+import InlinedScript from '../inlined-script.lite.jsx';
+import InlinedStyles from '../inlined-styles.lite.jsx';
 import type { ContentVariantsPrps } from './content-variants.types.js';
+import {
+  checkShouldRenderVariants,
+  getInitVariantsFnsScriptString,
+  getUpdateCookieAndStylesScript,
+  getVariants,
+} from './helpers.js';
 
 useMetadata({
   rsc: {
@@ -27,37 +27,40 @@ useMetadata({
   qwik: {
     setUseStoreFirst: true,
   },
+  angular: {
+    selector: 'builder-content, content-variants',
+  },
 });
 
 type VariantsProviderProps = ContentVariantsPrps & {
   /**
    * For internal use only. Do not provide this prop.
    */
-  __isNestedRender?: boolean;
+  isNestedRender?: boolean;
 };
 
 export default function ContentVariants(props: VariantsProviderProps) {
   onMount(() => {
     /**
-     * We unmount the non-winning variants post-hydration in Vue.
+     * For Solid/Svelte: we unmount the non-winning variants post-hydration.
      */
     useTarget({
-      vue2: () => {
+      solid: () => {
         state.shouldRenderVariants = false;
       },
-      vue3: () => {
+      svelte: () => {
         state.shouldRenderVariants = false;
       },
     });
   });
 
   const state = useStore({
-    shouldRenderVariants: checkShouldRunVariants({
+    shouldRenderVariants: checkShouldRenderVariants({
       canTrack: getDefaultCanTrack(props.canTrack),
       content: props.content,
     }),
-    get variantScriptStr() {
-      return getVariantsScriptString(
+    get updateCookieAndStylesScriptStr() {
+      return getUpdateCookieAndStylesScript(
         getVariants(props.content).map((value) => ({
           id: value.testVariationId!,
           testRatio: value.testRatio,
@@ -83,51 +86,73 @@ export default function ContentVariants(props: VariantsProviderProps) {
 
   return (
     <>
-      <Show when={!props.__isNestedRender && TARGET !== 'reactNative'}>
-        <InlinedScript scriptStr={getScriptString()} />
+      <Show when={!props.isNestedRender && TARGET !== 'reactNative'}>
+        <InlinedScript
+          scriptStr={getInitVariantsFnsScriptString()}
+          id="builderio-init-variants-fns"
+          nonce={props.nonce || ''}
+        />
       </Show>
       <Show when={state.shouldRenderVariants}>
         <InlinedStyles
-          id={`variants-styles-${props.content?.id}`}
+          id="builderio-variants"
           styles={state.hideVariantsStyleString}
+          nonce={props.nonce || ''}
         />
         {/* Sets A/B test cookie for all `RenderContent` to read */}
-        <InlinedScript scriptStr={state.variantScriptStr} />
+        <InlinedScript
+          id="builderio-variants-visibility"
+          scriptStr={state.updateCookieAndStylesScriptStr}
+          nonce={props.nonce || ''}
+        />
 
         <For each={getVariants(props.content)}>
           {(variant) => (
             <ContentComponent
+              apiHost={props.apiHost}
+              isNestedRender={props.isNestedRender}
               key={variant.testVariationId}
+              nonce={props.nonce}
               content={variant}
               showContent={false}
-              classNameProp={undefined}
               model={props.model}
               data={props.data}
               context={props.context}
               apiKey={props.apiKey}
               apiVersion={props.apiVersion}
               customComponents={props.customComponents}
+              linkComponent={props.linkComponent}
               canTrack={props.canTrack}
               locale={props.locale}
-              includeRefs={props.includeRefs}
               enrich={props.enrich}
               isSsrAbTest={state.shouldRenderVariants}
+              blocksWrapper={props.blocksWrapper}
+              blocksWrapperProps={props.blocksWrapperProps}
+              contentWrapper={props.contentWrapper}
+              contentWrapperProps={props.contentWrapperProps}
+              trustedHosts={props.trustedHosts}
+              {...useTarget({
+                // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+                // @ts-expect-error
+                reactNative: { strictStyleMode: props.strictStyleMode },
+                default: {},
+              })}
             />
           )}
         </For>
       </Show>
       <ContentComponent
+        apiHost={props.apiHost}
+        nonce={props.nonce}
+        isNestedRender={props.isNestedRender}
         {...useTarget({
-          vue2: {
-            key: state.shouldRenderVariants.toString(),
-          },
-          vue3: {
-            key: state.shouldRenderVariants.toString(),
-          },
+          vue: { key: state.shouldRenderVariants.toString() },
+          // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+          // @ts-expect-error
+          reactNative: { strictStyleMode: props.strictStyleMode },
           default: {},
         })}
         content={state.defaultContent}
-        classNameProp={`variant-${props.content?.id}`}
         showContent
         model={props.model}
         data={props.data}
@@ -135,11 +160,16 @@ export default function ContentVariants(props: VariantsProviderProps) {
         apiKey={props.apiKey}
         apiVersion={props.apiVersion}
         customComponents={props.customComponents}
+        linkComponent={props.linkComponent}
         canTrack={props.canTrack}
         locale={props.locale}
-        includeRefs={props.includeRefs}
         enrich={props.enrich}
         isSsrAbTest={state.shouldRenderVariants}
+        blocksWrapper={props.blocksWrapper}
+        blocksWrapperProps={props.blocksWrapperProps}
+        contentWrapper={props.contentWrapper}
+        contentWrapperProps={props.contentWrapperProps}
+        trustedHosts={props.trustedHosts}
       />
     </>
   );

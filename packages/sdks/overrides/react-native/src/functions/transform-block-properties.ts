@@ -1,25 +1,33 @@
+import { findDOMNode } from 'react-dom';
+import type { BuilderContextInterface } from '../context/types.js';
 import type { BuilderBlock } from '../types/builder-block.js';
 import { isEditing } from './is-editing.js';
-import { findDOMNode } from 'react-dom';
 
-export function transformBlockProperties(block: BuilderBlock) {
-  block.className = block.class;
-  delete block.class;
-
-  const id = block['builder-id'];
-
-  if (!id && isEditing()) {
-    console.warn('No builder-id found on block', block);
+export function transformBlockProperties({
+  properties,
+}: {
+  block: BuilderBlock;
+  context: BuilderContextInterface;
+  properties: any;
+}) {
+  if (!isEditing()) {
+    return properties;
   }
 
-  block.ref = (ref) => {
+  const id = properties['builder-id'];
+
+  if (!id) {
+    console.warn('No builder-id found on properties', properties);
+  }
+
+  properties.ref = (ref) => {
     if (isEditing()) {
       const el = findDOMNode(ref);
-      if (el) {
+      if (el && !(el instanceof Text)) {
         el.setAttribute('builder-id', id);
         el.classList.add(id);
       }
     }
   };
-  return block;
+  return properties;
 }

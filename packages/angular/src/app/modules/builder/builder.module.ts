@@ -13,6 +13,10 @@ import { BuilderComponentComponent } from './components/builder-component/builde
 import { BuilderComponentService } from './components/builder-component/builder-component.service';
 
 Builder.isStatic = true;
+Builder.sdkInfo = {
+  name: 'angular',
+  version: 'UNKNOWN_VERSION_TO_REPLACE',
+};
 
 const directives = [BuilderContentDirective];
 
@@ -28,7 +32,6 @@ const components = [
   providers: [BuilderService, BuilderContentService, BuilderComponentService],
   declarations: [components, directives],
   exports: [components, directives],
-  entryComponents: [components],
 })
 export class BuilderModule {
   constructor(injector: Injector, @Inject(PLATFORM_ID) private platformId: string) {
