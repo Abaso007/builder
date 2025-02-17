@@ -5,11 +5,13 @@
     "allowSyntheticDefaultImports": true,
     "jsx": "preserve",
     "moduleResolution": "Node16",
-    "module": "ESNext",
+    "module": "Node16",
     "skipLibCheck": true,
     "outDir": "dist",
     "declaration": true,
-    "allowJs": true
+    "allowJs": true,
+    // override types to remove jasmine `expect`
+    "types": ["node"]
   },
   "include": [
     "src/**/*",

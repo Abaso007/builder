@@ -1,5 +1,3 @@
-import ContentVariants from '../../components/content-variants/content-variants.lite.jsx';
-import type { BuilderContent } from '../../types/builder-content.js';
 import {
   onMount,
   onUpdate,
@@ -7,18 +5,19 @@ import {
   useStore,
   useTarget,
 } from '@builder.io/mitosis';
-import type {
-  BuilderComponentsProp,
-  PropsWithBuilderData,
-} from '../../types/builder-props.js';
+import ContentVariants from '../../components/content-variants/index.js';
+import type { BuilderContent } from '../../types/builder-content.js';
 import { filterAttrs } from '../helpers.js';
 /**
  * This import is used by the Svelte SDK. Do not remove.
  */
-// eslint-disable-next-line unused-imports/no-unused-imports, @typescript-eslint/no-unused-vars
+
+import DynamicDiv from '../../components/dynamic-div.lite.jsx';
+import { getClassPropName } from '../../functions/get-class-prop-name.js';
+import type { Nullable } from '../../types/typescript.js';
 import { setAttrs } from '../helpers.js';
 import { fetchSymbolContent } from './symbol.helpers.js';
-import type { Nullable } from '../../types/typescript.js';
+import type { SymbolProps } from './symbol.types.js';
 
 useMetadata({
   rsc: {
@@ -26,34 +25,31 @@ useMetadata({
   },
 });
 
-export interface SymbolInfo {
-  model?: string;
-  entry?: string;
-  data?: any;
-  content?: BuilderContent;
-  inline?: boolean;
-  dynamic?: boolean;
-}
-
-export interface SymbolProps extends BuilderComponentsProp {
-  symbol?: SymbolInfo;
-  dataOnly?: boolean;
-  dynamic?: boolean;
-  attributes?: any;
-  inheritState?: boolean;
-}
-
-export default function Symbol(props: PropsWithBuilderData<SymbolProps>) {
+export default function Symbol(props: SymbolProps) {
   const state = useStore({
+    get blocksWrapper() {
+      return useTarget({
+        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+        // @ts-ignore
+        reactNative: View,
+        angular: DynamicDiv,
+        default: 'div',
+      });
+    },
+    get contentWrapper() {
+      return useTarget({
+        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+        // @ts-ignore
+        reactNative: View,
+        angular: DynamicDiv,
+        default: 'div',
+      });
+    },
     get className() {
       return [
         ...useTarget({
-          vue2: Object.keys(props.attributes.class),
-          vue3: Object.keys(props.attributes.class),
-          react: [props.attributes.className],
-          rsc: [props.attributes.className],
           reactNative: [],
-          default: [props.attributes.class],
+          default: [props.attributes[getClassPropName()]],
         }),
         'builder-symbol',
         props.symbol?.inline ? 'builder-inline-symbol' : undefined,
@@ -93,20 +89,27 @@ export default function Symbol(props: PropsWithBuilderData<SymbolProps>) {
   }, [props.symbol]);
 
   onMount(() => {
-    state.setContent();
+    useTarget({
+      react: () => {},
+      reactNative: () => {},
+      solid: () => {},
+      angular: () => {},
+
+      default: () => {
+        state.setContent();
+      },
+    });
   });
 
   return (
     <div
       {...useTarget({
-        vue2: filterAttrs(props.attributes, 'v-on:', false),
-        vue3: filterAttrs(props.attributes, 'v-on:', false),
+        vue: filterAttrs(props.attributes, 'v-on:', false),
         svelte: filterAttrs(props.attributes, 'on:', false),
         default: {},
       })}
       {...useTarget({
-        vue2: filterAttrs(props.attributes, 'v-on:', true),
-        vue3: filterAttrs(props.attributes, 'v-on:', true),
+        vue: filterAttrs(props.attributes, 'v-on:', true),
         svelte: filterAttrs(props.attributes, 'on:', true),
         default: props.attributes,
       })}
@@ -117,18 +120,26 @@ export default function Symbol(props: PropsWithBuilderData<SymbolProps>) {
       })}
     >
       <ContentVariants
-        __isNestedRender
+        nonce={props.builderContext.value.nonce}
+        isNestedRender
         apiVersion={props.builderContext.value.apiVersion}
         apiKey={props.builderContext.value.apiKey!}
-        context={props.builderContext.value.context}
+        context={{
+          ...props.builderContext.value.context,
+          symbolId: props.builderBlock?.id,
+        }}
         customComponents={Object.values(props.builderComponents)}
         data={{
           ...props.symbol?.data,
           ...props.builderContext.value.localState,
           ...state.contentToUse?.data?.state,
         }}
-        model={props.symbol?.model}
+        canTrack={props.builderContext.value.canTrack}
+        model={props.symbol?.model ?? ''}
         content={state.contentToUse}
+        linkComponent={props.builderLinkComponent}
+        blocksWrapper={state.blocksWrapper}
+        contentWrapper={state.contentWrapper}
       />
     </div>
   );

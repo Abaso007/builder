@@ -1,38 +1,26 @@
-# Builder.io React SDK v2 (BETA)
+## NOTE
 
-This is the React v2 SDK, `@builder.io/sdk-react`.
+At the moment, we are investigating some performance issues in our gen2 React SDK that prevent us from recommending it over the gen1 React SDK for all customer use-cases. Our team is actively working on these issues, and once they are resolved our recommendation will be to use the gen2 React SDK.
 
-NOTE: it is still in Beta. For the stable React v1 SDK [go here](../../../react/), i.e. `builder.io/react`.
+# Builder.io React SDK v2
+
+This is the React v2 SDK, `@builder.io/sdk-react`. It is a complete rewrite of the React SDK, and has the following benefits:
+
+- zero client-side dependencies
+- far smaller bundle size (25kb)
+
+NOTE: if you are using the SDK in a webapp that gets deployed on a serverless environment (like Next or Hydrogen), you might need to import the SDK from `@builder.io/sdk-react/edge`. This is a special import that handles edge cases surrounding serverless environments.
 
 ## API Reference
 
 To use the SDK, you need to:
 
-- fetch the builder data using `getContent`: you can see how to use it here https://www.builder.io/c/docs/content-api, and how it differs from the React V1 SDK's `builder.get()` function.
+- fetch the builder data using `fetchOneEntry`: you can see how to use it here https://www.builder.io/c/docs/content-api, and how it differs from the React V1 SDK's `builder.get()` function.
 
-NOTE: if you are using the SDK in next v13's app directory, you will have to import `getContent` from @builder.io/sdk-react/server`. this is a special import that guarantees you don't import any client components with your data fetching.
-
-- pass that data to the `RenderContent` component, along with the following properties:
-
-```ts
-type RenderContentProps = {
-  content?: Nullable<BuilderContent>;
-  model?: string;
-  data?: { [key: string]: any };
-  context?: BuilderRenderContext;
-  apiKey: string;
-  apiVersion?: ApiVersion;
-  customComponents?: RegisteredComponent[];
-  canTrack?: boolean;
-  locale?: string;
-  includeRefs?: boolean;
-};
-```
-
-Here is a simplified example showing how you would use both:
+- pass that data to the `Content` component. Here is a simplified example showing how you would use both:
 
 ```tsx
-import { RenderContent, getContent, isPreviewing } from '@builder.io/sdk-react';
+import { Content, fetchOneEntry, isPreviewing } from '@builder.io/sdk-react';
 import { useEffect, useState } from 'react';
 
 const BUILDER_PUBLIC_API_KEY = 'YOUR API KEY';
@@ -41,7 +29,7 @@ function App() {
   const [content, setContent] = useState(undefined);
 
   useEffect(() => {
-    getContent({
+    fetchOneEntry({
       model: 'page',
       apiKey: BUILDER_PUBLIC_API_KEY,
       userAttributes: {
@@ -55,11 +43,7 @@ function App() {
   const shouldRenderBuilderContent = content || isPreviewing();
 
   return shouldRenderBuilderContent ? (
-    <RenderContent
-      content={content}
-      model="page"
-      apiKey={BUILDER_PUBLIC_API_KEY}
-    />
+    <Content content={content} model="page" apiKey={BUILDER_PUBLIC_API_KEY} />
   ) : (
     <div>Content Not Found</div>
   );
@@ -84,8 +68,9 @@ npm install @builder.io/sdk-react
 
 ## Examples
 
-- [React](../../../../examples/react-v2/)
-- [Next.js + app dir](../../../../examples/next-app-directory)
+- [React + Vite](../../../../examples/react-v2/)
+- [Next.js App Router](../../../../examples/nextjs-app-dir-v2/)
+- [Next.js Pages Router](../../../../examples/nextjs-pages-dir-v2/)
 
 ## Fetch
 

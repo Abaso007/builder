@@ -8,6 +8,7 @@ import { BuilderMetaContext } from '../store/builder-meta';
 import { withBuilder } from '../functions/with-builder';
 import { throttle } from '../functions/throttle';
 import { Breakpoints, getSizesForBreakpoints } from '../constants/device-sizes.constant';
+import { IMAGE_FILE_TYPES } from 'src/constants/file-types.constant';
 
 // Taken from (and modified) the shopify theme script repo
 // https://github.com/Shopify/theme-scripts/blob/bcfb471f2a57d439e2f964a1bb65b67708cc90c3/packages/theme-images/images.js#L59
@@ -118,7 +119,7 @@ export const getSizes = (
       })
       .join(', ');
   } else if (block && block.responsiveStyles) {
-    const generatedSizes = [];
+    const generatedSizes: string[] = [];
     let hasSmallOrMediumSize = false;
     const unitRegex = /^\d+/;
 
@@ -161,12 +162,15 @@ export const getSizes = (
 // TODO: use picture tag to support more formats
 class ImageComponent extends React.Component<any, { imageLoaded: boolean; load: boolean }> {
   get useLazyLoading() {
+    if (this.props.highPriority) {
+      return false;
+    }
     // Use builder.getLocation()
     return Builder.isBrowser && location.search.includes('builder.lazyLoadImages=false')
       ? false
       : Builder.isBrowser && location.href.includes('builder.lazyLoadImages=true')
-      ? true
-      : this.props.lazy;
+        ? true
+        : this.props.lazy;
   }
 
   // TODO: setting to always fade in the images (?)
@@ -259,7 +263,11 @@ class ImageComponent extends React.Component<any, { imageLoaded: boolean; load: 
 
   getSrcSet(): string | undefined {
     const url = this.image;
-    if (!url) {
+    if (!url || typeof url !== 'string') {
+      return;
+    }
+
+    if (this.props.noWebp) {
       return;
     }
 
@@ -294,6 +302,7 @@ class ImageComponent extends React.Component<any, { imageLoaded: boolean; load: 
     }
 
     const isPixel = builderBlock?.id.startsWith('builder-pixel-');
+    const eagerLoad = isPixel || this.props.highPriority;
     const { fitContent } = this.props;
 
     return (
@@ -342,7 +351,8 @@ class ImageComponent extends React.Component<any, { imageLoaded: boolean; load: 
                   },
                 }),
               }}
-              loading={isPixel ? 'eager' : 'lazy'}
+              loading={eagerLoad ? 'eager' : 'lazy'}
+              fetchPriority={eagerLoad ? 'high' : 'auto'}
               className={'builder-image' + (this.props.className ? ' ' + this.props.className : '')}
               src={this.image}
               {...(!amp && {
@@ -433,7 +443,7 @@ export const Image = withBuilder(ImageComponent, {
       name: 'image',
       type: 'file',
       bubble: true,
-      allowedFileTypes: ['jpeg', 'jpg', 'png', 'svg'],
+      allowedFileTypes: IMAGE_FILE_TYPES,
       required: true,
       defaultValue:
         'https://cdn.builder.io/api/v1/image/assets%2FYJIGb4i01jvw0SRdL5Bt%2F72c80f114dc149019051b6852a9e3b7a',
@@ -537,6 +547,13 @@ export const Image = withBuilder(ImageComponent, {
       name: 'altText',
       type: 'string',
       helperText: 'Text to display when the user has images off',
+    },
+    {
+      name: 'highPriority',
+      type: 'boolean',
+      advanced: true,
+      helperText:
+        'Mark this image as high priority compared to other images on the page. This prevents lazy loading of the image and tells the browser to load this image before others on the page.',
     },
     {
       name: 'height',

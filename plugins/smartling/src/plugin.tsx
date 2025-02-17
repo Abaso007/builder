@@ -6,7 +6,11 @@ import pkg from '../package.json';
 import appState from '@builder.io/app-context';
 import uniq from 'lodash/uniq';
 import isEqual from 'lodash/isEqual';
-import { getTranslationModelTemplate, getTranslationModel } from './model-template';
+import {
+  getTranslationModelTemplate,
+  getTranslationModel,
+  translationModelName,
+} from './model-template';
 import {
   registerBulkAction,
   registerContentAction,
@@ -25,6 +29,33 @@ import hash from 'object-hash';
 import stringify from 'fast-json-stable-stringify';
 // translation status that indicate the content is being queued for translations
 const enabledTranslationStatuses = ['pending', 'local'];
+
+function updatePublishCTA(content: any, translationModel: any) {
+  let publishButtonText = undefined;
+  let publishedToastMessage = undefined;
+
+  // establish that it's a job's content entry that we are currently in
+  if (content.modelId === translationModel?.id) {
+    const pluginSettings = appState.user.organization?.value?.settings?.plugins?.get(pkg.name);
+    if (!pluginSettings) {
+      return;
+    }
+
+    const enableJobAutoAuthorization = pluginSettings.get('enableJobAutoAuthorization');
+
+    // if 'enableJobAutoAuthorization' is undefined then assume it to be true and proceed likewise
+    if (enableJobAutoAuthorization === undefined || enableJobAutoAuthorization === true) {
+      publishButtonText = 'Authorize';
+      publishedToastMessage = 'Authorized';
+    } else {
+      publishButtonText = 'Send to Smartling';
+      publishedToastMessage = 'Sent to Smartling';
+    }
+  }
+
+  appState.designerState.editorOptions.publishButtonText = publishButtonText;
+  appState.designerState.editorOptions.publishedToastMessage = publishedToastMessage;
+}
 
 registerPlugin(
   {
@@ -46,6 +77,22 @@ registerPlugin(
         type: 'string',
         required: true,
       },
+      {
+        name: 'enableJobAutoAuthorization',
+        friendlyName: 'Authorize Smartling Jobs through Builder',
+        type: 'boolean',
+        defaultValue: true,
+        helperText: 'Allows users to authorize Smartling jobs directly from Builder',
+        requiredPermissions: ['admin'],
+      },
+      {
+        name: 'copySmartlingLocales',
+        friendlyName: 'Copy Locales from Smartling to Builder',
+        type: 'boolean',
+        defaultValue: true,
+        helperText: 'This will copy locales from Smartling to Builder',
+        requiredPermissions: ['admin'],
+      },
     ],
     onSave: async actions => {
       const pluginPrivateKey = await appState.globalState.getPluginPrivateKey(pkg.name);
@@ -58,21 +105,27 @@ registerPlugin(
     ctaText: `Connect your Smartling account`,
     noPreviewTypes: true,
   },
-  async () => {
+  async (settings) => {
+    const copySmartlingLocales= settings.get('copySmartlingLocales');
     const api = new SmartlingApi();
     registerEditorOnLoad(({ safeReaction }) => {
       safeReaction(
         () => {
           return String(appState.designerState.editingContentModel?.lastUpdated || '');
         },
-        async shoudlCheck => {
-          if (!shoudlCheck) {
+        async shouldCheck => {
+          if (!shouldCheck) {
             return;
           }
-          const translationStatus =
-            appState.designerState.editingContentModel.meta.get('translationStatus');
-          const translationRequested =
-            appState.designerState.editingContentModel.meta.get('translationRequested');
+
+          updatePublishCTA(appState.designerState.editingContentModel, getTranslationModel());
+
+          const translationStatus = appState.designerState.editingContentModel.meta.get(
+            'translationStatus'
+          );
+          const translationRequested = appState.designerState.editingContentModel.meta.get(
+            'translationRequested'
+          );
 
           // check if there's pending translation
           const isFresh =
@@ -85,7 +138,7 @@ registerPlugin(
           const projectId = content.meta?.translationBatch?.projectId;
           if (isPending && projectId && content.published === 'published') {
             const lastPublishedContent = await fetch(
-              `https://cdn.builder.io/api/v2/content/${appState.designerState.editingModel.name}/${content.id}?apiKey=${appState.user.apiKey}&cachebust=true`
+              `https://cdn.builder.io/api/v3/content/${appState.designerState.editingModel.name}/${content.id}?apiKey=${appState.user.apiKey}&cachebust=true`
             ).then(res => res.json());
             const res = await api.getProject(projectId);
             const sourceLocale = res.project?.sourceLocaleId;
@@ -94,7 +147,9 @@ registerPlugin(
               sourceLocale,
               ''
             );
-            const currentRevision = hash(stringify(translatableFields), { encoding: 'base64' });
+            const currentRevision = hash(stringify(translatableFields), {
+              encoding: 'base64',
+            });
             appState.designerState.editingContentModel.meta.set(
               'translationRevisionLatest',
               currentRevision
@@ -104,7 +159,7 @@ registerPlugin(
                 appState.globalState.showGlobalBlockingLoading('Contacting Smartling ....');
                 await api.updateTranslationFile({
                   translationJobId: lastPublishedContent.meta.translationJobId,
-                  translationModel: getTranslationModel().name,
+                  translationModel: translationModelName,
                   contentId: lastPublishedContent.id,
                   contentModel: appState.designerState.editingModel.name,
                   preview: lastPublishedContent.meta.lastPreviewUrl,
@@ -143,17 +198,19 @@ registerPlugin(
           )
           .reduce((acc, val) => acc.concat(val), [])
       );
-
       const currentLocales = appState.user.organization.value.customTargetingAttributes
-        ?.get('locale')
-        ?.toJSON();
+      ?.get('locale')
+      ?.toJSON();
 
-      if (!isEqual(currentLocales?.enum, smartlingLocales)) {
-        appState.user.organization.value.customTargetingAttributes.set('locale', {
-          type: 'string',
-          enum: smartlingLocales,
-        });
-      }
+      let combinedLocales = [...new Set([...smartlingLocales, ...currentLocales?.enum || []])];
+
+      
+        if (copySmartlingLocales) {
+          //merge builder locales with smartling locales (all unique locales)
+          if(!isEqual(currentLocales?.enum, combinedLocales)){
+            appState.user.organization.value.customTargetingAttributes?.get('locale').set('enum', combinedLocales);
+          }
+        }
     });
     // create a new action on content to add to job
     registerBulkAction({
@@ -272,10 +329,15 @@ registerPlugin(
             ...fastClone(content.meta),
             translationStatus: 'local',
             translationJobId,
+            translationBy: pkg.name,
           },
         });
         showJobNotification(translationJobId);
       },
+      isDisabled() {
+        return appState.designerState.hasUnsavedChanges();
+      },
+      disabledTooltip: 'Please publish your changes to add to translation job',
     });
     registerContentAction({
       label: 'Request an updated translation',
@@ -292,7 +354,7 @@ registerPlugin(
       async onClick(content) {
         appState.globalState.showGlobalBlockingLoading('Contacting Smartling ....');
         const lastPublishedContent = await fetch(
-          `https://cdn.builder.io/api/v2/content/${appState.designerState.editingModel.name}/${content.id}?apiKey=${appState.user.apiKey}&cachebust=true`
+          `https://cdn.builder.io/api/v3/content/${appState.designerState.editingModel.name}/${content.id}?apiKey=${appState.user.apiKey}&cachebust=true`
         ).then(res => res.json());
         await api.updateTranslationFile({
           translationJobId: lastPublishedContent.meta.translationJobId,
@@ -352,6 +414,29 @@ registerPlugin(
       },
     });
 
+    registerContentAction({
+      label: 'Remove from translation job',
+      showIf(content, model) {
+        const translationModel = getTranslationModel();
+        return (
+          model.name !== translationModel.name && Boolean(content.meta.get('translationJobId'))
+        );
+      },
+      async onClick(content) {
+        appState.globalState.showGlobalBlockingLoading();
+
+        await api.removeContentFromTranslationJob({
+          contentId: content.id,
+          contentModel: appState.designerState.editingModel.name,
+          translationJobId: content.meta.get('translationJobId'),
+          translationModel: translationModelName,
+        });
+
+        appState.globalState.hideGlobalBlockingLoading();
+        appState.snackBar.show('Removed from translation job.');
+      },
+    });
+
     Builder.registerEditor({
       name: 'SmartlingConfiguration',
       component: (props: CustomReactEditorProps) => (
@@ -365,13 +450,27 @@ registerPlugin(
           return api.getProject(id).then(res => transformProject(res.project));
         },
         search(q = '') {
-          return api
-            .getAllProjects()
-            .then(res =>
-              res.results
-                .filter(proj => proj.projectName.toLowerCase().includes(q.toLowerCase()))
-                .map(transformProject)
-            );
+          return api.getAllProjects().then(res => {
+            if (!res.results || res.results.length === 0) {
+              return appState.globalState
+                .getPluginPrivateKey(pkg.name)
+                .then((pluginPrivateKey: string) => {
+                  if (api.isPluginPrivateKeySame(pluginPrivateKey)) {
+                    appState.snackBar.show('Oh no! There was an error searching for resources');
+                  } else {
+                    appState.snackBar.show(
+                      'Please refresh your browser to view your Smartling projects.'
+                    );
+                  }
+
+                  return [];
+                });
+            }
+
+            return res.results
+              .filter(proj => proj.projectName.toLowerCase().includes(q.toLowerCase()))
+              .map(transformProject);
+          });
         },
         getRequestObject(id) {
           // todo update types, commerce-plugin-tools actually accepts strings, just needs an interface update

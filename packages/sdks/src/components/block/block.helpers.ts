@@ -1,57 +1,38 @@
+import type { Signal } from '@builder.io/mitosis';
 import type {
   BuilderContextInterface,
+  RegisteredComponent,
   RegisteredComponents,
 } from '../../context/types.js';
 import { evaluate } from '../../functions/evaluate/index.js';
-import { getProcessedBlock } from '../../functions/get-processed-block.js';
+import { extractTextStyles } from '../../functions/extract-text-styles.js';
+import { getStyle } from '../../functions/get-style.js';
 import type { BuilderBlock } from '../../types/builder-block.js';
 import type { RepeatData } from './types.js';
 
-/**
- * https://developer.mozilla.org/en-US/docs/Glossary/Empty_element
- */
-const EMPTY_HTML_ELEMENTS = [
-  'area',
-  'base',
-  'br',
-  'col',
-  'embed',
-  'hr',
-  'img',
-  'input',
-  'keygen',
-  'link',
-  'meta',
-  'param',
-  'source',
-  'track',
-  'wbr',
-];
-
-export const isEmptyHtmlElement = (tagName: unknown) => {
+const checkIsComponentRestricted = (
+  component: RegisteredComponent | null | undefined,
+  model: string
+) => {
+  if (!component) return true;
+  if (!model) return false;
   return (
-    typeof tagName === 'string' &&
-    EMPTY_HTML_ELEMENTS.includes(tagName.toLowerCase())
+    component.models &&
+    component.models.length > 0 &&
+    !component.models.includes(model)
   );
 };
 
 export const getComponent = ({
   block,
-  context,
   registeredComponents,
+  model,
 }: {
   block: BuilderBlock;
-  context: BuilderContextInterface;
   registeredComponents: RegisteredComponents;
+  model: string;
 }) => {
-  const componentName = getProcessedBlock({
-    block,
-    localState: context.localState,
-    rootState: context.rootState,
-    rootSetState: context.rootSetState,
-    context: context.context,
-    shouldEvaluateBindings: false,
-  }).component?.name;
+  const componentName = block.component?.name;
 
   if (!componentName) {
     return null;
@@ -59,7 +40,7 @@ export const getComponent = ({
 
   const ref = registeredComponents[componentName];
 
-  if (!ref) {
+  if (!ref || checkIsComponentRestricted(ref, model)) {
     // TODO: Public doc page with more info about this message
     console.warn(`
       Could not find a registered component named "${componentName}". 
@@ -118,4 +99,64 @@ export const getRepeatItemData = ({
   }));
 
   return repeatArray;
+};
+
+export const getInheritedStyles = ({
+  block,
+  context,
+}: {
+  block: BuilderBlock;
+  context: BuilderContextInterface;
+}) => {
+  const style = getStyle({ block, context });
+  if (!style) {
+    return {};
+  }
+  return extractTextStyles(style);
+};
+
+export const provideLinkComponent = (
+  block: RegisteredComponent | null | undefined,
+  linkComponent: any
+) => {
+  if (block?.shouldReceiveBuilderProps?.builderLinkComponent)
+    return { builderLinkComponent: linkComponent };
+
+  return {};
+};
+
+export const provideRegisteredComponents = (
+  block: RegisteredComponent | null | undefined,
+  registeredComponents: RegisteredComponents,
+  model: string
+) => {
+  if (block?.shouldReceiveBuilderProps?.builderComponents) {
+    const filteredRegisteredComponents = Object.fromEntries(
+      Object.entries(registeredComponents).filter(([_, component]) => {
+        return !checkIsComponentRestricted(component, model);
+      })
+    );
+    return { builderComponents: filteredRegisteredComponents };
+  }
+
+  return {};
+};
+
+export const provideBuilderBlock = (
+  block: RegisteredComponent | null | undefined,
+  builderBlock: BuilderBlock
+) => {
+  if (block?.shouldReceiveBuilderProps?.builderBlock) return { builderBlock };
+
+  return {};
+};
+
+export const provideBuilderContext = (
+  block: RegisteredComponent | null | undefined,
+  context: Signal<BuilderContextInterface>
+) => {
+  if (block?.shouldReceiveBuilderProps?.builderContext)
+    return { builderContext: context };
+
+  return {};
 };

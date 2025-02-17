@@ -3,6 +3,7 @@ import type { Input } from './input.js';
 import type { Nullable } from './typescript.js';
 
 export interface Breakpoints {
+  xsmall?: number;
   small: number;
   medium: number;
 }
@@ -33,6 +34,7 @@ export interface BuilderContent extends BuilderContentVariation {
   published?: 'published' | 'draft' | 'archived';
   modelId?: string;
   priority?: number;
+  firstPublished?: number;
   lastUpdated?: number;
   startDate?: number;
   endDate?: number;
