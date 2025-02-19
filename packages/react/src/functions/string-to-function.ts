@@ -1,6 +1,7 @@
 import { Builder, builder } from '@builder.io/sdk';
 import { safeDynamicRequire } from './safe-dynamic-require';
 import { isDebug } from './is-debug';
+import { shouldForceBrowserRuntimeInNode } from './should-force-browser-runtime-in-node';
 
 const fnCache: { [key: string]: BuilderEvanFunction | undefined } = {};
 
@@ -108,7 +109,7 @@ export function stringToFunction(
 
   const final = (...args: any[]) => {
     try {
-      if (Builder.isBrowser) {
+      if (Builder.isBrowser || shouldForceBrowserRuntimeInNode()) {
         return fn(...args);
       } else {
         // TODO: memoize on server
@@ -207,8 +208,8 @@ export const makeFn = (code: string, useReturn: boolean, args?: string[]) => {
               return () => obj.copySync();
             }
             const val = obj.getSync(key);
-            if (typeof val?.getSync === 'function') {
-                return refToProxy(val);
+            if (typeof val?.copySync === 'function') {
+                return JSON.parse(stringify(val));
             }
             return val;
         },
@@ -236,7 +237,11 @@ ${refToProxyFn}
 ${strinfigyFn}
 `.concat(names.map((arg, index) => `var ${arg} = refToProxy($${index});`).join('\n')).concat(`
 ${names.includes('context') ? 'var ctx = context;' : ''}
-${useReturn ? `return stringify(${code});` : code};
+var endResult = function() {
+  ${useReturn ? `return (${code});` : code};
+};
+
+return stringify(endResult());
 `);
 };
 

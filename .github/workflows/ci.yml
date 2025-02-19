@@ -14,17 +14,267 @@ env:
   NX_CLOUD_ACCESS_TOKEN: ${{ secrets.NX_CLOUD_ACCESS_TOKEN }}
 
 jobs:
-  lint:
+  sdks-base:
+    name: Gen 2 SDKs checks
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v3
-
-      - name: Use node version 16
-        uses: actions/setup-node@v3
+      - name: Setup
+        uses: actions/checkout@v4
+        # This is needed to fix an issue with Nx attempting to find the `HEAD~1` commit.
+        # https://stackoverflow.com/a/78153130
         with:
-          node-version: '16.x'
+          fetch-depth: $(( ${{ github.event_name == 'pull_request' && github.event.pull_request.commits || 0 }} + 1 ))
 
-      - run: npm run ci:lint
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18.x'
+
+      - name: 📥 Monorepo install
+        uses: ./.github/actions/yarn-nm-install
+        with:
+          cache-node-modules: true
+          cache-install-state: true
+
+      - name: Run eslint
+        run: yarn workspace @builder.io/sdks eslint
+
+      - name: Typecheck
+        run: yarn g:nx typecheck @builder.io/sdks
+
+      - name: Run tests
+        run: yarn g:nx test @builder.io/sdks
+
+      - name: Lint changesets
+        run: yarn g:changeset version
+
+  sdks:
+    name: Gen 2 SDKs
+    runs-on: ubuntu-latest
+
+    strategy:
+      # we still want to run all the SDK tests even if one fails, to get a full picture of the state of the SDKs.
+      fail-fast: false
+      matrix:
+        e2e-server:
+          [
+            'svelte',
+            'sveltekit',
+            'react-native-74',
+            'react-native-76-fabric',
+            'solid',
+            'solid-start',
+            'qwik-city',
+            'react',
+            'remix',
+            'hydrogen',
+            'react-sdk-next-pages',
+            'react-sdk-next-14-app',
+            'react-sdk-next-15-app',
+            'nextjs-sdk-next-app',
+            'vue',
+            'nuxt',
+            'angular-16',
+            'angular-16-ssr',
+            'angular-19-ssr',
+          ]
+
+    steps:
+      - name: Setup
+        uses: actions/checkout@v4
+        # This is needed to fix an issue with Nx attempting to find the `HEAD~1` commit.
+        # https://stackoverflow.com/a/78153130
+        with:
+          fetch-depth: $(( ${{ github.event_name == 'pull_request' && github.event.pull_request.commits || 0 }} + 1 ))
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18.x'
+
+      - name: 📥 Monorepo install
+        uses: ./.github/actions/yarn-nm-install
+        with:
+          cache-node-modules: true
+          cache-install-state: true
+
+      - name: Run E2E tests
+        run: yarn g:nx test @e2e/${{ matrix.e2e-server }}
+
+      - name: Upload Playwright Report
+        uses: actions/upload-artifact@v4
+        # Only upload the report if the tests failed
+        if: ${{ failure() }}
+        with:
+          name: ${{ matrix.e2e-server }}-playwright-report
+          path: packages/sdks-tests/playwright-report/
+          retention-days: 30
+
+  sdks-snippets:
+    name: Gen 2 SDK Snippets
+    runs-on: ubuntu-latest
+
+    strategy:
+      # we still want to run all the SDK tests even if one fails, to get a full picture of the state of the SDKs.
+      fail-fast: false
+      matrix:
+        snippet:
+          [
+            'vue',
+            'nuxt',
+            'react',
+            'angular-16',
+            'angular-16-ssr',
+            'qwik-city',
+            'nextjs-sdk-next-app',
+            'react-sdk-next-14-app',
+            'react-sdk-next-pages',
+            'svelte',
+            'sveltekit',
+            'solid',
+            'react-native-74',
+            'hydrogen',
+          ]
+
+    steps:
+      - name: Setup
+        uses: actions/checkout@v4
+        # This is needed to fix an issue with Nx attempting to find the `HEAD~1` commit.
+        # https://stackoverflow.com/a/78153130
+        with:
+          fetch-depth: $(( ${{ github.event_name == 'pull_request' && github.event.pull_request.commits || 0 }} + 1 ))
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18.x'
+
+      - name: 📥 Monorepo install
+        uses: ./.github/actions/yarn-nm-install
+        with:
+          cache-node-modules: true
+          cache-install-state: true
+
+      - name: Run snippets tests
+        run: yarn g:nx test @snippet/${{ matrix.snippet }}
+
+      - name: Upload Playwright Report
+        uses: actions/upload-artifact@v4
+        # Only upload the report if the tests failed
+        if: ${{ failure() }}
+        with:
+          name: ${{ matrix.snippet }}-snippet-playwright-report
+          path: packages/sdks-tests/playwright-report/
+          retention-days: 30
+
+  gen1-sdk-core:
+    name: Gen 1 SDK Core
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Setup
+        uses: actions/checkout@v4
+        # This is needed to fix an issue with Nx attempting to find the `HEAD~1` commit.
+        # https://stackoverflow.com/a/78153130
+        with:
+          fetch-depth: $(( ${{ github.event_name == 'pull_request' && github.event.pull_request.commits || 0 }} + 1 ))
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18.x'
+
+      - name: 📥 Monorepo install
+        uses: ./.github/actions/yarn-nm-install
+        with:
+          cache-node-modules: true
+          cache-install-state: true
+
+      - name: Test Core
+        run: yarn g:nx test @builder.io/sdk
+
+      - name: Build Core
+        run: yarn g:nx build @builder.io/sdk
+
+  gen1-react-sdk:
+    name: Gen 1 React SDK
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        e2e-server: ['gen1-react', 'gen1-next14-pages', 'gen1-next15-app', 'gen1-remix']
+
+    steps:
+      - name: Setup
+        uses: actions/checkout@v4
+        # This is needed to fix an issue with Nx attempting to find the `HEAD~1` commit.
+        # https://stackoverflow.com/a/78153130
+        with:
+          fetch-depth: $(( ${{ github.event_name == 'pull_request' && github.event.pull_request.commits || 0 }} + 1 ))
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18.x'
+
+      - name: 📥 Monorepo install
+        uses: ./.github/actions/yarn-nm-install
+        with:
+          cache-node-modules: true
+          cache-install-state: true
+
+      - name: Run E2E tests
+        run: yarn g:nx test @e2e/${{ matrix.e2e-server }}
+
+      - name: Upload Playwright Report
+        uses: actions/upload-artifact@v4
+        # Only upload the report if the tests failed
+        if: ${{ failure() }}
+        with:
+          name: ${{ matrix.e2e-server }}-playwright-report
+          path: packages/sdks-tests/playwright-report/
+          retention-days: 30
+
+  gen1-sdk-snippets:
+    name: Gen 1 SDK Snippets
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        snippet: ['gen1-react', 'gen1-next14-pages', 'gen1-remix']
+
+    steps:
+      - name: Setup
+        uses: actions/checkout@v4
+        # This is needed to fix an issue with Nx attempting to find the `HEAD~1` commit.
+        # https://stackoverflow.com/a/78153130
+        with:
+          fetch-depth: $(( ${{ github.event_name == 'pull_request' && github.event.pull_request.commits || 0 }} + 1 ))
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18.x'
+
+      - name: 📥 Monorepo install
+        uses: ./.github/actions/yarn-nm-install
+        with:
+          cache-node-modules: true
+          cache-install-state: true
+
+      - name: Run snippets tests
+        run: yarn nx test @snippet/${{ matrix.snippet }}
+
+      - name: Upload Playwright Report
+        uses: actions/upload-artifact@v4
+        if: ${{ failure() }}
+        with:
+          name: ${{ matrix.snippet }}-snippet-playwright-report
+          path: packages/sdks-tests/playwright-report/
+          retention-days: 30
 
   build:
     runs-on: ubuntu-latest
@@ -35,19 +285,19 @@ jobs:
         package: ['webcomponents', 'widgets']
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
-      - name: Use node version 16
-        uses: actions/setup-node@v3
+      - name: Use node version 18
+        uses: actions/setup-node@v4
         with:
-          node-version: '16.x'
+          node-version: '18.x'
 
       - name: Get npm cache directory
         id: npm-cache-dir
         run: |
           echo "::set-output name=dir::$(npm config get cache)"
 
-      - uses: actions/cache@v3
+      - uses: actions/cache@v4
         id: npm-cache # use this to check for `cache-hit` ==> if: steps.npm-cache.outputs.cache-hit != 'true'
         with:
           path: ${{ steps.npm-cache-dir.outputs.dir }}
@@ -67,150 +317,38 @@ jobs:
         run: npm run ci:test --if-present
         working-directory: packages/${{ matrix.package }}
 
-  sdks-base:
+  build-angular-gen1:
     runs-on: ubuntu-latest
 
-    defaults:
-      run:
-        working-directory: packages/sdks
-
     steps:
-      - name: Setup
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
-      - name: Use Node.js
-        uses: actions/setup-node@v3
+      - name: Use node version 18
+        uses: actions/setup-node@v4
         with:
-          node-version: '16.x'
+          node-version: '18.x'
 
-      - name: 📥 Monorepo install
-        uses: ./.github/actions/yarn-nm-install
+      - name: Get npm cache directory
+        id: npm-cache-dir
+        run: |
+          echo "::set-output name=dir::$(npm config get cache)"
+
+      - uses: actions/cache@v4
+        id: npm-cache # use this to check for `cache-hit` ==> if: steps.npm-cache.outputs.cache-hit != 'true'
         with:
-          cwd: 'packages/'
-          cache-node-modules: true
-          cache-install-state: true
+          path: ${{ steps.npm-cache-dir.outputs.dir }}
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
 
-      - name: Run prettier
-        run: yarn ci:lint
+      - name: NPM install
+        run: npm ci
+        working-directory: packages/angular
 
-      - name: Typecheck
-        run: yarn nx typecheck @builder.io/sdks
+      - name: Build
+        run: npm run ci:build --if-present
+        working-directory: packages/angular
 
-      - name: Run tests
-        run: yarn nx test @builder.io/sdks
-
-  sdks-outputs:
-    runs-on: ubuntu-latest
-
-    strategy:
-      # we still want to run all the SDK tests even if one fails, to get a full picture of the state of the SDKs.
-      fail-fast: false
-      matrix:
-        sdk: ['svelte', 'qwik', 'react-native', 'react', 'nextjs', 'solid', 'vue2', 'vue3']
-        include:
-          - sdk: svelte
-            sdk-name: svelte
-          - sdk: qwik
-            sdk-name: qwik
-          - sdk: react-native
-            sdk-name: react-native
-          - sdk: react
-            sdk-name: react
-          - sdk: nextjs
-            sdk-name: react-nextjs
-          - sdk: solid
-            sdk-name: solid
-          - sdk: vue2
-            sdk-name: vue
-          - sdk: vue3
-            sdk-name: vue
-
-    defaults:
-      run:
-        working-directory: packages/sdks
-
-    steps:
-      - name: Setup
-        uses: actions/checkout@v3
-
-      - name: Use Node.js
-        uses: actions/setup-node@v3
-        with:
-          node-version: '16.x'
-
-      - name: 📥 Monorepo install
-        uses: ./.github/actions/yarn-nm-install
-        with:
-          cwd: 'packages/'
-          cache-node-modules: true
-          cache-install-state: true
-
-      - name: Build E2E apps
-        run: yarn workspace @builder.io/sdks e2e:build:${{ matrix.sdk }}
-
-      - name: Run E2E tests
-        run: yarn workspace @builder.io/sdks e2e:run:${{ matrix.sdk }}
-
-      - name: Upload Playwright Report
-        uses: actions/upload-artifact@v3
-        # Only upload the report if the tests failed
-        if: ${{ failure() }}
-        with:
-          name: ${{ matrix.sdk }}-playwright-report
-          path: packages/sdks-tests/playwright-report/
-          retention-days: 30
-
-  core-sdk:
-    runs-on: ubuntu-latest
-
-    defaults:
-      run:
-        working-directory: packages
-
-    steps:
-      - name: Setup
-        uses: actions/checkout@v3
-
-      - name: Use Node.js
-        uses: actions/setup-node@v3
-        with:
-          node-version: '16.x'
-
-      - name: 📥 Monorepo install
-        uses: ./.github/actions/yarn-nm-install
-        with:
-          cwd: 'packages/'
-          cache-node-modules: true
-          cache-install-state: true
-
-      - name: Build Core
-        run: yarn nx build @builder.io/sdk
-
-  old-react-sdk:
-    runs-on: ubuntu-latest
-
-    defaults:
-      run:
-        working-directory: packages
-
-    steps:
-      - name: Setup
-        uses: actions/checkout@v3
-
-      - name: Use Node.js
-        uses: actions/setup-node@v3
-        with:
-          node-version: '16.x'
-
-      - name: 📥 Monorepo install
-        uses: ./.github/actions/yarn-nm-install
-        with:
-          cwd: 'packages/'
-          cache-node-modules: true
-          cache-install-state: true
-
-      - name: Build E2E apps
-        run: yarn workspace @builder.io/mono-repo e2e:build:old-react
-
-      - name: Run E2E tests
-        run: yarn workspace @builder.io/mono-repo e2e:run:old-react
+      - name: Test
+        run: npm run ci:test --if-present
+        working-directory: packages/angular

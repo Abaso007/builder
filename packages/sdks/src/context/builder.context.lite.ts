@@ -12,6 +12,10 @@ export default createContext<BuilderContextInterface>(
     apiVersion: undefined,
     componentInfos: {},
     inheritedStyles: {},
+    BlocksWrapper: 'div',
+    BlocksWrapperProps: {},
+    nonce: '',
+    model: '',
   },
   { reactive: true }
 );

@@ -1,13 +1,18 @@
-import { useStore, useTarget } from '@builder.io/mitosis';
+import {
+  onMount,
+  useMetadata,
+  useRef,
+  useStore,
+  useTarget,
+} from '@builder.io/mitosis';
 import { isEditing } from '../../functions/is-editing.js';
 import type { BuilderBlock } from '../../types/builder-block.js';
-import type { PropsWithChildren } from '../../types/typescript.js';
-import { useMetadata } from '@builder.io/mitosis';
 
 useMetadata({
   rsc: {
     componentType: 'client',
   },
+  elementTag: 'props.BlocksWrapper',
 });
 
 export type BlocksWrapperProps = {
@@ -15,14 +20,43 @@ export type BlocksWrapperProps = {
   parent: string | undefined;
   path: string | undefined;
   styleProp: Record<string, any> | undefined;
+  /**
+   * The element that wraps each list of blocks. Defaults to a `div` element ('ScrollView' in React Native).
+   */
+  BlocksWrapper: any;
+  /**
+   * Additonal props to pass to `blocksWrapper`. Defaults to `{}`.
+   */
+  BlocksWrapperProps: any;
+
+  children?: any;
+
+  classNameProp?: string;
 };
 
-export default function BlocksWrapper(
-  props: PropsWithChildren<BlocksWrapperProps>
-) {
+export default function BlocksWrapper(props: BlocksWrapperProps) {
+  const blocksWrapperRef = useRef<HTMLDivElement>();
   const state = useStore({
     get className() {
-      return 'builder-blocks' + (!props.blocks?.length ? ' no-blocks' : '');
+      return [
+        'builder-blocks',
+        !props.blocks?.length ? 'no-blocks' : '',
+        props.classNameProp,
+      ]
+        .filter(Boolean)
+        .join(' ');
+    },
+    get dataPath() {
+      if (!props.path) {
+        return undefined;
+      }
+      const thisPrefix = 'this.';
+      const pathPrefix = 'component.options.';
+      return props.path.startsWith(thisPrefix)
+        ? props.path.replace(thisPrefix, '')
+        : props.path.startsWith(pathPrefix)
+          ? props.path
+          : `${pathPrefix}${props.path || ''}`;
     },
     onClick() {
       if (isEditing() && !props.blocks?.length) {
@@ -31,7 +65,7 @@ export default function BlocksWrapper(
             type: 'builder.clickEmptyBlocks',
             data: {
               parentElementId: props.parent,
-              dataPath: props.path,
+              dataPath: state.dataPath,
             },
           },
           '*'
@@ -45,7 +79,7 @@ export default function BlocksWrapper(
             type: 'builder.hoverEmptyBlocks',
             data: {
               parentElementId: props.parent,
-              dataPath: props.path,
+              dataPath: state.dataPath,
             },
           },
           '*'
@@ -54,29 +88,59 @@ export default function BlocksWrapper(
     },
   });
 
+  onMount(() => {
+    useTarget({
+      reactNative: () => {
+        if (isEditing()) {
+          /**
+           * React Native strips off custom HTML attributes, so we have to manually set them here
+           * to ensure that blocks are correctly dropped into the correct parent.
+           */
+          if (state.dataPath) {
+            blocksWrapperRef.setAttribute('builder-path', state.dataPath);
+          }
+          if (props.parent) {
+            blocksWrapperRef.setAttribute('builder-parent-id', props.parent);
+          }
+        }
+      },
+      default: () => {},
+    });
+  });
+
   return (
-    <div
+    <props.BlocksWrapper
+      ref={blocksWrapperRef}
       class={state.className}
-      builder-path={props.path}
+      builder-path={state.dataPath}
       builder-parent-id={props.parent}
       {...useTarget({
         reactNative: { dataSet: { class: state.className } },
         default: {},
       })}
       style={props.styleProp}
-      css={{
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'stretch',
-      }}
+      // eslint-disable-next-line @builder.io/mitosis/css-no-vars
+      css={useTarget({
+        // react native's ScrollView can't accept `alignItems` in styles.
+        reactNative: {
+          display: 'flex',
+          flexDirection: 'column',
+        },
+        default: {
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'stretch',
+        },
+      })}
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      onClick={(event) => state.onClick()}
+      onClick={(event: any) => state.onClick()}
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      onMouseEnter={(event) => state.onMouseEnter()}
+      onMouseEnter={(event: any) => state.onMouseEnter()}
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      onKeyPress={(event) => state.onClick()}
+      onKeyPress={(event: any) => state.onClick()}
+      {...props.BlocksWrapperProps}
     >
       {props.children}
-    </div>
+    </props.BlocksWrapper>
   );
 }

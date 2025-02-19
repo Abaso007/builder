@@ -1,6 +1,11 @@
-import { defineConfig } from 'vite';
 import { qwikVite } from '@builder.io/qwik/optimizer';
-import { viteOutputGenerator } from '@builder.io/sdks/output-generation/index.js';
+import {
+  getSdkEnv,
+  viteOutputGenerator,
+} from '@builder.io/sdks/output-generation/index.js';
+import { defineConfig } from 'vite';
+
+const SDK_ENV = getSdkEnv();
 
 export default defineConfig(() => {
   return {
@@ -11,10 +16,21 @@ export default defineConfig(() => {
         /**
          * https://github.com/BuilderIO/qwik/issues/4952
          */
-        fileName: (format) => `index.qwik.${format === 'es' ? 'mjs' : 'cjs'}`,
+        fileName: (format, entryName) =>
+          `${entryName}.qwik.${format === 'es' ? 'mjs' : 'cjs'}`,
       },
       rollupOptions: {
-        external: ['@builder.io/qwik', 'js-interpreter', 'isolated-vm'],
+        external: ['@builder.io/qwik', 'node:module', 'isolated-vm'],
+        input: [
+          './src/index.ts',
+          SDK_ENV === 'node'
+            ? './src/functions/evaluate/node-runtime/init.ts'
+            : undefined,
+        ].filter(Boolean),
+        output: {
+          preserveModules: true,
+          preserveModulesRoot: 'src',
+        },
       },
     },
     plugins: [viteOutputGenerator(), qwikVite()],

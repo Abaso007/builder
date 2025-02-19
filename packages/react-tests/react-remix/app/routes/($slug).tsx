@@ -1,8 +1,10 @@
 import { Links, Meta, Scripts, useCatch, useLoaderData, useParams } from '@remix-run/react';
 import type { LoaderFunction } from '@remix-run/node';
 import { BuilderComponent, builder } from '@builder.io/react';
-import { getAPIKey, getProps } from '@e2e/tests';
+import { getAPIKey, getProps } from '@sdk/tests';
 import { useEffect } from 'react';
+
+import '@builder.io/widgets';
 
 builder.init(getAPIKey());
 
@@ -42,12 +44,32 @@ export default function Page() {
     builder.apiVersion = props?.apiVersion;
   }
 
-  // only enable tracking if we're not in the `/can-track-false` test route
+  if (props?.apiEndpoint) {
+    builder.apiEndpoint = props.apiEndpoint;
+    delete props.apiEndpoint;
+  }
+
   useEffect(() => {
-    if (!params.slug?.includes('can-track-false')) {
-      builder.canTrack = true;
+    if (
+      window.location.pathname.includes('get-query') ||
+      window.location.pathname.includes('get-content')
+    ) {
+      builder
+        .get('', {
+          ...props,
+          ...props['options'],
+        })
+        .promise()
+        .then();
     }
   }, []);
+
+  // only enable tracking if we're not in the `/can-track-false` and `symbol-tracking` test route
+  useEffect(() => {
+    if (!params.slug?.includes('can-track-false') && !params.slug?.includes('symbol-tracking')) {
+      builder.canTrack = true;
+    }
+  }, [params.slug]);
 
   return props?.content ? <BuilderComponent {...props} /> : <div>Content Not Found.</div>;
 }

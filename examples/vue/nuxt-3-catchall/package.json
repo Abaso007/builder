@@ -8,9 +8,9 @@
     "postinstall": "nuxt prepare"
   },
   "devDependencies": {
-    "nuxt": "^3.4.3"
+    "nuxt": "^3.12.4"
   },
   "dependencies": {
-    "@builder.io/sdk-vue": "^0.6.3"
+    "@builder.io/sdk-vue": "^1.0.14"
   }
 }

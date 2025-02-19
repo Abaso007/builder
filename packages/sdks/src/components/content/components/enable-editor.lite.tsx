@@ -1,55 +1,65 @@
-import type { BuilderContextInterface } from '../../../context/types.js';
-import { evaluate } from '../../../functions/evaluate/index.js';
-import { fetch } from '../../../functions/get-fetch.js';
-import { isBrowser } from '../../../functions/is-browser.js';
-import { isEditing } from '../../../functions/is-editing.js';
-import { createRegisterComponentMessage } from '../../../functions/register-component.js';
-import { _track } from '../../../functions/track/index.js';
-import builderContext from '../../../context/builder.context.lite.js';
 import type { Signal } from '@builder.io/mitosis';
 import {
   Show,
+  onEvent,
+  onInit,
   onMount,
   onUnMount,
   onUpdate,
-  useStore,
+  setContext,
   useMetadata,
   useRef,
-  setContext,
+  useState,
+  useStore,
   useTarget,
 } from '@builder.io/mitosis';
+import builderContext from '../../../context/builder.context.lite.js';
+import type { BuilderContextInterface } from '../../../context/types.js';
+import { evaluate } from '../../../functions/evaluate/index.js';
+import { fastClone } from '../../../functions/fast-clone.js';
+import { fetchOneEntry } from '../../../functions/get-content/index.js';
+import { isBrowser } from '../../../functions/is-browser.js';
+import { isEditing } from '../../../functions/is-editing.js';
+import { isPreviewing } from '../../../functions/is-previewing.js';
+import { logFetch } from '../../../functions/log-fetch.js';
+import { createRegisterComponentMessage } from '../../../functions/register-component.js';
+import { _track } from '../../../functions/track/index.js';
+import { getInteractionPropertiesForEvent } from '../../../functions/track/interaction.js';
+import { getDefaultCanTrack } from '../../../helpers/canTrack.js';
+import { getCookieSync } from '../../../helpers/cookie.js';
+import { postPreviewContent } from '../../../helpers/preview-lru-cache/set.js';
+import { createEditorListener } from '../../../helpers/subscribe-to-editor.js';
 import {
   registerInsertMenu,
   setupBrowserForEditing,
 } from '../../../scripts/init-editing.js';
-import { checkIsDefined } from '../../../helpers/nullable.js';
-import { getInteractionPropertiesForEvent } from '../../../functions/track/interaction.js';
-import type {
-  ContentProps,
-  BuilderComponentStateChange,
-} from '../content.types.js';
-import { logger } from '../../../helpers/logger.js';
-import type { ComponentInfo } from '../../../types/components.js';
-import { fetchOneEntry } from '../../../functions/get-content/index.js';
-import { isPreviewing } from '../../../functions/is-previewing.js';
 import type { BuilderContent } from '../../../types/builder-content.js';
-import { postPreviewContent } from '../../../helpers/preview-lru-cache/set.js';
-import { fastClone } from '../../../functions/fast-clone.js';
+import type { ComponentInfo } from '../../../types/components.js';
+import type { Dictionary } from '../../../types/typescript.js';
+import { triggerAnimation } from '../../block/animator.js';
+import DynamicDiv from '../../dynamic-div.lite.jsx';
+import type {
+  BuilderComponentStateChange,
+  ContentProps,
+} from '../content.types.js';
+import { needsElementRefDivForEditing } from './enable-editor.helpers.js';
+import { getWrapperClassName } from './styles.helpers.js';
 
 useMetadata({
   qwik: {
     hasDeepStore: true,
   },
-  plugins: {
-    reactNative: {
-      useScrollView: true,
-    },
-  },
+  elementTag: 'state.ContentWrapper',
 });
 
 type BuilderEditorProps = Omit<
   ContentProps,
-  'customComponents' | 'data' | 'apiVersion' | 'isSsrAbTest'
+  | 'customComponents'
+  | 'apiVersion'
+  | 'isSsrAbTest'
+  | 'blocksWrapper'
+  | 'blocksWrapperProps'
+  | 'linkComponent'
 > & {
   builderContextSignal: Signal<BuilderContextInterface>;
   setBuilderContextSignal?: (signal: any) => any;
@@ -57,10 +67,24 @@ type BuilderEditorProps = Omit<
 };
 
 export default function EnableEditor(props: BuilderEditorProps) {
+  /**
+   * This var name is hard-coded in some Mitosis Plugins. Do not change.
+   */
   const elementRef = useRef<HTMLDivElement>();
+  const [hasExecuted, setHasExecuted] = useState<boolean>(false);
   const state = useStore({
-    canTrackToUse: checkIsDefined(props.canTrack) ? props.canTrack : true,
-    forceReRenderCount: 0,
+    mergeNewRootState(newData: Dictionary<any>) {
+      const combinedState = {
+        ...props.builderContextSignal.value.rootState,
+        ...newData,
+      };
+
+      if (props.builderContextSignal.value.rootSetState) {
+        props.builderContextSignal.value.rootSetState?.(combinedState);
+      } else {
+        props.builderContextSignal.value.rootState = combinedState;
+      }
+    },
     mergeNewContent(newContent: BuilderContent) {
       const newContentValue = {
         ...props.builderContextSignal.value.content,
@@ -94,15 +118,22 @@ export default function EnableEditor(props: BuilderEditorProps) {
         },
       });
     },
-    lastUpdated: 0,
-    shouldSendResetCookie: false,
+    get showContentProps() {
+      return props.showContent ? {} : { hidden: true, 'aria-hidden': true };
+    },
+    ContentWrapper: useTarget({
+      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+      // @ts-ignore
+      reactNative: props.contentWrapper || ScrollView,
+      angular: props.contentWrapper || DynamicDiv,
+      default: props.contentWrapper || 'div',
+    }),
     processMessage(event: MessageEvent): void {
-      const { data } = event;
-
-      if (data) {
-        switch (data.type) {
-          case 'builder.configureSdk': {
-            const messageContent = data.data;
+      return createEditorListener({
+        model: props.model,
+        trustedHosts: props.trustedHosts,
+        callbacks: {
+          configureSdk: (messageContent) => {
             const { breakpoints, contentId } = messageContent;
             if (
               !contentId ||
@@ -113,42 +144,21 @@ export default function EnableEditor(props: BuilderEditorProps) {
             if (breakpoints) {
               state.mergeNewContent({ meta: { breakpoints } });
             }
-            state.forceReRenderCount = state.forceReRenderCount + 1; // This is a hack to force Qwik to re-render.
-            break;
-          }
-          case 'builder.contentUpdate': {
-            const messageContent = data.data;
-            const key =
-              messageContent.key ||
-              messageContent.alias ||
-              messageContent.entry ||
-              messageContent.modelName;
-
-            const contentData = messageContent.data;
-
-            if (key === props.model) {
-              state.mergeNewContent(contentData);
-              state.forceReRenderCount = state.forceReRenderCount + 1; // This is a hack to force Qwik to re-render.
-            }
-            break;
-          }
-        }
-      }
-    },
-    evaluateJsCode() {
-      // run any dynamic JS code attached to content
-      const jsCode = props.builderContextSignal.value.content?.data?.jsCode;
-      if (jsCode) {
-        evaluate({
-          code: jsCode,
-          context: props.context || {},
-          localState: undefined,
-          rootState: props.builderContextSignal.value.rootState,
-          rootSetState: props.builderContextSignal.value.rootSetState,
-        });
-      }
+          },
+          animation: (animation) => {
+            triggerAnimation(animation);
+          },
+          contentUpdate: (newContent) => {
+            state.mergeNewContent(newContent);
+          },
+          stateUpdate: (newState) => {
+            state.mergeNewRootState(newState);
+          },
+        },
+      })(event);
     },
     httpReqsData: {} as { [key: string]: boolean },
+    httpReqsPending: {} as { [key: string]: boolean },
 
     clicked: false,
 
@@ -158,8 +168,9 @@ export default function EnableEditor(props: BuilderEditorProps) {
           props.builderContextSignal.value.content?.testVariationId;
         const contentId = props.builderContextSignal.value.content?.id;
         _track({
+          apiHost: props.apiHost,
           type: 'click',
-          canTrack: state.canTrackToUse,
+          canTrack: getDefaultCanTrack(props.canTrack),
           contentId,
           apiKey: props.apiKey,
           variationId: variationId !== contentId ? variationId : undefined,
@@ -173,41 +184,46 @@ export default function EnableEditor(props: BuilderEditorProps) {
       }
     },
 
-    evalExpression(expression: string) {
-      return expression.replace(/{{([^}]+)}}/g, (_match, group) =>
-        evaluate({
-          code: group,
-          context: props.context || {},
-          localState: undefined,
-          rootState: props.builderContextSignal.value.rootState,
-          rootSetState: props.builderContextSignal.value.rootSetState,
-        })
-      );
-    },
-    handleRequest({ url, key }: { key: string; url: string }) {
-      fetch(url)
-        .then((response) => response.json())
-        .then((json) => {
-          const newState = {
-            ...props.builderContextSignal.value.rootState,
-            [key]: json,
-          };
-          props.builderContextSignal.value.rootSetState?.(newState);
-          state.httpReqsData[key] = true;
-        })
-        .catch((err) => {
-          console.error('error fetching dynamic data', url, err);
-        });
-    },
     runHttpRequests() {
       const requests: { [key: string]: string } =
         props.builderContextSignal.value.content?.data?.httpRequests ?? {};
 
       Object.entries(requests).forEach(([key, url]) => {
-        if (url && (!state.httpReqsData[key] || isEditing())) {
-          const evaluatedUrl = state.evalExpression(url);
-          state.handleRequest({ url: evaluatedUrl, key });
-        }
+        if (!url) return;
+
+        // request already in progress
+        if (state.httpReqsPending[key]) return;
+
+        // request already completed, and not in edit mode
+        if (state.httpReqsData[key] && !isEditing()) return;
+
+        state.httpReqsPending[key] = true;
+        const evaluatedUrl = url.replace(/{{([^}]+)}}/g, (_match, group) =>
+          String(
+            evaluate({
+              code: group,
+              context: props.context || {},
+              localState: undefined,
+              rootState: props.builderContextSignal.value.rootState,
+              rootSetState: props.builderContextSignal.value.rootSetState,
+            })
+          )
+        );
+
+        logFetch(evaluatedUrl);
+
+        fetch(evaluatedUrl)
+          .then((response) => response.json())
+          .then((json) => {
+            state.mergeNewRootState({ [key]: json });
+            state.httpReqsData[key] = true;
+          })
+          .catch((err) => {
+            console.error('error fetching dynamic data', url, err);
+          })
+          .finally(() => {
+            state.httpReqsPending[key] = false;
+          });
       });
     },
     emitStateUpdate() {
@@ -242,17 +258,6 @@ export default function EnableEditor(props: BuilderEditorProps) {
     });
   }, [props.content]);
 
-  onUpdate(() => {
-    useTarget({
-      rsc: () => {
-        if (isBrowser()) {
-          window.removeEventListener('message', state.processMessage);
-          window.addEventListener('message', state.processMessage);
-        }
-      },
-    });
-  }, [state.shouldSendResetCookie]);
-
   onUnMount(() => {
     if (isBrowser()) {
       window.removeEventListener('message', state.processMessage);
@@ -263,119 +268,257 @@ export default function EnableEditor(props: BuilderEditorProps) {
     }
   });
 
-  onMount(() => {
-    if (!props.apiKey) {
-      logger.error(
-        'No API key provided to `RenderContent` component. This can cause issues. Please provide an API key using the `apiKey` prop.'
-      );
-    }
+  onEvent(
+    'initeditingbldr',
+    () => {
+      window.addEventListener('message', state.processMessage);
 
-    if (isBrowser()) {
-      if (isEditing()) {
-        state.forceReRenderCount = state.forceReRenderCount + 1;
-        window.addEventListener('message', state.processMessage);
-
-        registerInsertMenu();
-        setupBrowserForEditing({
-          ...(props.locale ? { locale: props.locale } : {}),
-          ...(props.includeRefs ? { includeRefs: props.includeRefs } : {}),
-          ...(props.enrich ? { enrich: props.enrich } : {}),
-        });
-        Object.values<ComponentInfo>(
-          props.builderContextSignal.value.componentInfos
-        ).forEach((registeredComponent) => {
+      registerInsertMenu();
+      setupBrowserForEditing({
+        ...(props.locale ? { locale: props.locale } : {}),
+        ...(props.enrich ? { enrich: props.enrich } : {}),
+        ...(props.trustedHosts ? { trustedHosts: props.trustedHosts } : {}),
+        modelName: props.model ?? '',
+        apiKey: props.apiKey,
+      });
+      Object.values<ComponentInfo>(
+        props.builderContextSignal.value.componentInfos
+      ).forEach((registeredComponent) => {
+        if (
+          !registeredComponent.models?.length ||
+          registeredComponent.models.includes(props.model)
+        ) {
           const message = createRegisterComponentMessage(registeredComponent);
           window.parent?.postMessage(message, '*');
-        });
-        window.addEventListener(
-          'builder:component:stateChangeListenerActivated',
-          state.emitStateUpdate
-        );
-      }
-      if (props.builderContextSignal.value.content) {
-        const variationId =
-          props.builderContextSignal.value.content?.testVariationId;
-        const contentId = props.builderContextSignal.value.content?.id;
-        _track({
-          type: 'impression',
-          canTrack: state.canTrackToUse,
-          contentId,
+        }
+      });
+      window.addEventListener(
+        'builder:component:stateChangeListenerActivated',
+        state.emitStateUpdate
+      );
+    },
+    elementRef,
+    true
+  );
+
+  onEvent(
+    'initpreviewingbldr',
+    () => {
+      const searchParams = new URL(location.href).searchParams;
+      const searchParamPreviewModel = searchParams.get('builder.preview');
+      const searchParamPreviewId = searchParams.get(
+        `builder.overrides.${searchParamPreviewModel}`
+      );
+      const previewApiKey =
+        searchParams.get('apiKey') || searchParams.get('builder.space');
+
+      /**
+       * Make sure that:
+       * - the preview model name is the same as the one we're rendering, since there can be multiple models rendered
+       *  at the same time, e.g. header/page/footer.
+       * - the API key is the same, since we don't want to preview content from other organizations.
+       * - if there is content, that the preview ID is the same as that of the one we receive.
+       *
+       * TO-DO: should we only update the state when there is a change?
+       **/
+      if (
+        searchParamPreviewModel === 'BUILDER_STUDIO' ||
+        (searchParamPreviewModel === props.model &&
+          previewApiKey === props.apiKey &&
+          (!props.content || searchParamPreviewId === props.content.id))
+      ) {
+        fetchOneEntry({
+          model: props.model,
           apiKey: props.apiKey,
-          variationId: variationId !== contentId ? variationId : undefined,
+          apiVersion: props.builderContextSignal.value.apiVersion,
+          ...(searchParamPreviewModel === 'BUILDER_STUDIO' &&
+          props.context?.symbolId
+            ? { query: { id: props.context.symbolId } }
+            : {}),
+        }).then((content) => {
+          if (content) {
+            state.mergeNewContent(content);
+          }
         });
       }
+    },
+    elementRef,
+    true
+  );
 
+  /**
+   * To initialize previewing and editing, SDKs need to send and receive events
+   * to/from visual editor.
+   * - in React/hydration frameworks, we just shove all that code into `useEffect(() => {}, [])` (onMount)
+   * - in Qwik, we have no hydration step. And we want to avoid eagerly executing code as much as possible
+   *
+   * Our workaround for Qwik is:
+   *
+   * - instead of `useVisibleTask$()`, we listen to`useOn('qvisible')` which will have a reference to the root element of the component.
+   *   - never use `props.*` or `state.*` inside of the event handler for `'qvisible'`. This guarantees that we are not making the user download a ton of data.
+   *   - instead, of you need any data, set it as a data attribute on the root element, and then read those attributes via the element ref (2nd argument of qvisible event handler).
+   *   - move heavy editing and previwing logic behind `customEvent` dispatches, guaranteeing that production qwik sdk load time will be perfect (no hydration, no eager code besides tracking impression)
+   */
+  onMount(() => {
+    useTarget({
+      qwik: () => {
+        if (hasExecuted) return;
+      },
+    });
+    if (isBrowser()) {
       useTarget({
-        rsc: () => {},
-        default: () => {
-          // override normal content in preview mode
-          if (isPreviewing()) {
-            const searchParams = new URL(location.href).searchParams;
-            const searchParamPreviewModel = searchParams.get('builder.preview');
-            const searchParamPreviewId = searchParams.get(
-              `builder.preview.${searchParamPreviewModel}`
-            );
-            const previewApiKey =
-              searchParams.get('apiKey') || searchParams.get('builder.space');
-
-            /**
-             * Make sure that:
-             * - the preview model name is the same as the one we're rendering, since there can be multiple models rendered
-             *  at the same time, e.g. header/page/footer.
-             * - the API key is the same, since we don't want to preview content from other organizations.
-             * - if there is content, that the preview ID is the same as that of the one we receive.
-             *
-             * TO-DO: should we only update the state when there is a change?
-             **/
-            if (
-              searchParamPreviewModel === props.model &&
-              previewApiKey === props.apiKey &&
-              (!props.content || searchParamPreviewId === props.content.id)
-            ) {
-              fetchOneEntry({
-                model: props.model,
-                apiKey: props.apiKey,
-                apiVersion: props.builderContextSignal.value.apiVersion,
-              }).then((content) => {
-                if (content) {
-                  state.mergeNewContent(content);
-                }
-              });
-            }
-          }
+        qwik: () => {
+          setHasExecuted(true);
         },
       });
+      if (isEditing() && !props.isNestedRender) {
+        useTarget({
+          // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+          // @ts-ignore
+          solid: () => INJECT_EDITING_HOOK_HERE,
+          // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+          // @ts-ignore
+          reactNative: () => INJECT_EDITING_HOOK_HERE,
+          // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+          // @ts-ignore
+          react: () => INJECT_EDITING_HOOK_HERE,
+          // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+          // @ts-ignore
+          angular: () => INJECT_EDITING_HOOK_HERE,
+          default: () => {
+            if (elementRef) {
+              elementRef.dispatchEvent(new CustomEvent('initeditingbldr'));
+            }
+          },
+        });
+      }
 
-      state.evaluateJsCode();
-      state.runHttpRequests();
-      state.emitStateUpdate();
+      const shouldTrackImpression = useTarget({
+        qwik:
+          elementRef.attributes.getNamedItem('shouldTrack')?.value === 'true',
+        default:
+          props.builderContextSignal.value.content &&
+          getDefaultCanTrack(props.canTrack),
+      });
+      const winningVariantId = getCookieSync({
+        name: `builder.tests.${props.builderContextSignal.value.content?.id}`,
+        canTrack: true,
+      });
+      const variationId = useTarget({
+        qwik: elementRef.attributes.getNamedItem('variationId')?.value,
+        default: props.builderContextSignal.value.content?.testVariationId,
+      });
+
+      if (shouldTrackImpression && variationId === winningVariantId) {
+        const contentId = useTarget({
+          qwik: elementRef.attributes.getNamedItem('contentId')?.value,
+          default: props.builderContextSignal.value.content?.id,
+        });
+        const apiKeyProp = useTarget({
+          qwik: elementRef.attributes.getNamedItem('apiKey')?.value,
+          default: props.apiKey,
+        });
+
+        _track({
+          apiHost: props.apiHost,
+          type: 'impression',
+          canTrack: true,
+          contentId,
+          apiKey: apiKeyProp!,
+          variationId:
+            winningVariantId !== contentId ? winningVariantId : undefined,
+        });
+      }
+
+      /**
+       * Override normal content in preview mode.
+       * We ignore this when editing, since the edited content is already being sent from the editor via post messages.
+       */
+      if (isPreviewing() && !isEditing()) {
+        useTarget({
+          rsc: () => {},
+          // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+          // @ts-ignore
+          solid: () => INJECT_PREVIEWING_HOOK_HERE,
+          // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+          // @ts-ignore
+          reactNative: () => INJECT_PREVIEWING_HOOK_HERE,
+          // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+          // @ts-ignore
+          react: () => INJECT_PREVIEWING_HOOK_HERE,
+          // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+          // @ts-ignore
+
+          angular: () => INJECT_PREVIEWING_HOOK_HERE,
+          default: () => {
+            if (elementRef) {
+              elementRef.dispatchEvent(new CustomEvent('initpreviewingbldr'));
+            }
+          },
+        });
+      }
     }
   });
 
-  onUpdate(() => {
-    state.evaluateJsCode();
-  }, [
-    props.builderContextSignal.value.content?.data?.jsCode,
-    props.builderContextSignal.value.rootState,
-  ]);
-
-  onUpdate(() => {
+  onInit(() => {
     state.runHttpRequests();
-  }, [props.builderContextSignal.value.content?.data?.httpRequests]);
+    state.emitStateUpdate();
+  });
 
   onUpdate(() => {
     state.emitStateUpdate();
   }, [props.builderContextSignal.value.rootState]);
 
+  onUpdate(() => {
+    if (props.data) {
+      state.mergeNewRootState(props.data);
+    }
+  }, [props.data]);
+
+  onUpdate(() => {
+    if (props.locale) {
+      state.mergeNewRootState({ locale: props.locale });
+    }
+  }, [props.locale]);
+
   return (
-    <Show when={props.builderContextSignal.value.content}>
-      <div
-        key={state.forceReRenderCount}
+    <Show
+      when={
+        props.builderContextSignal.value.content ||
+        needsElementRefDivForEditing()
+      }
+    >
+      <state.ContentWrapper
+        {...useTarget({
+          qwik: {
+            apiKey: props.apiKey,
+            contentId: props.builderContextSignal.value.content?.id,
+            variationId:
+              props.builderContextSignal.value.content?.testVariationId,
+            shouldTrack: String(
+              props.builderContextSignal.value.content &&
+                getDefaultCanTrack(props.canTrack)
+            ),
+          },
+          default: {},
+        })}
         ref={elementRef}
-        onClick={(event) => state.onClick(event)}
+        onClick={(event: any) => state.onClick(event)}
         builder-content-id={props.builderContextSignal.value.content?.id}
         builder-model={props.model}
-        className={props.classNameProp}
+        className={getWrapperClassName(
+          props.content?.testVariationId || props.content?.id
+        )}
+        // content exists: render div and display: undefined
+        // content does not exist but isEditing/isPreviewing: render div and display: 'none'
+        // once inline editing kicks in, it will populate the content and re-render, so display style will be removed
+        style={{
+          display:
+            !props.builderContextSignal.value.content &&
+            needsElementRefDivForEditing()
+              ? 'none'
+              : undefined,
+        }}
         {...useTarget({
           reactNative: {
             // currently, we can't set the actual ID here.
@@ -384,10 +527,11 @@ export default function EnableEditor(props: BuilderEditorProps) {
           },
           default: {},
         })}
-        {...(props.showContent ? {} : { hidden: true, 'aria-hidden': true })}
+        {...state.showContentProps}
+        {...props.contentWrapperProps}
       >
         {props.children}
-      </div>
+      </state.ContentWrapper>
     </Show>
   );
 }

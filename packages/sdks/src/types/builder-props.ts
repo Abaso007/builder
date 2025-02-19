@@ -5,11 +5,19 @@ import type {
 } from '../context/types.js';
 import type { BuilderBlock } from './builder-block.js';
 
-export type PropsWithBuilderData<T> = T & {
+export type BuilderDataProps = {
   builderBlock: BuilderBlock;
   builderContext: Signal<BuilderContextInterface>;
 };
 
 export type BuilderComponentsProp = {
   builderComponents: RegisteredComponents;
+};
+
+export type BuilderLinkComponentProp = {
+  builderLinkComponent?: any;
+};
+
+export type BuilderNonceProp = {
+  nonce: string;
 };
