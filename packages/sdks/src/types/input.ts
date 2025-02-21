@@ -20,6 +20,16 @@ export interface Input {
   autoFocus?: boolean;
   subFields?: Input[];
   /**
+   * When input is of `type` `object`, use this field to collapse multiple inputs
+   * in the Visual Editor by default and preserve screen space.
+   */
+  folded?: boolean;
+  /**
+   * When input is of `type` `object`, provide guidance in the Visual Editor
+   * on how to edit this object's contents.
+   */
+  keysHelperText?: string;
+  /**
    * Additional text to render in the UI to give guidance on how to use this
    *
    * @example
@@ -117,9 +127,16 @@ export interface Input {
    * Use optionally with inputs of type `reference`. Restricts the content entry picker to a specific model by name.
    */
   model?: string;
-
+  behavior?: string;
   valueType?: {
     type?: string;
   };
-  onChange?: ((options: Map<string, any>) => void | Promise<void>) | string;
+  onChange?:
+    | ((
+        options: Map<string, any>,
+        previousOptions?: Map<string, any>
+      ) => void | Promise<void>)
+    | string;
+
+  meta?: Record<string, any>;
 }

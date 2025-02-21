@@ -1,7 +1,13 @@
 {
   "name": "@builder.io/sdk-react-nextjs",
   "description": "Builder.io RSC SDK for NextJS App Directory",
-  "version": "0.6.4",
+  "version": "0.18.2",
+  "homepage": "https://github.com/BuilderIO/builder/tree/main/packages/sdks/output/nextjs",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/BuilderIO/builder.git",
+    "directory": "packages/sdks/output/nextjs"
+  },
   "files": [
     "lib",
     "types"
@@ -9,117 +15,113 @@
   "types": "./types/index.d.ts",
   "main": "./lib/node/index.cjs",
   "module": "./lib/node/index.mjs",
+  "type": "module",
   "exports": {
     ".": {
       "node": {
-        "types": "./types/index.d.ts",
         "import": "./lib/node/index.mjs",
         "require": "./lib/node/index.cjs"
       },
       "browser": {
-        "types": "./types/index.d.ts",
         "import": "./lib/browser/index.mjs",
         "require": "./lib/browser/index.cjs"
       },
       "edge-routine": {
-        "types": "./types/index.d.ts",
         "import": "./lib/edge/index.mjs",
         "require": "./lib/edge/index.cjs"
       },
       "workerd": {
-        "types": "./types/index.d.ts",
         "import": "./lib/edge/index.mjs",
         "require": "./lib/edge/index.cjs"
       },
       "deno": {
-        "types": "./types/index.d.ts",
         "import": "./lib/edge/index.mjs",
         "require": "./lib/edge/index.cjs"
       },
       "lagon": {
-        "types": "./types/index.d.ts",
         "import": "./lib/edge/index.mjs",
         "require": "./lib/edge/index.cjs"
       },
       "netlify": {
-        "types": "./types/index.d.ts",
         "import": "./lib/edge/index.mjs",
         "require": "./lib/edge/index.cjs"
       },
       "edge-light": {
-        "types": "./types/index.d.ts",
         "import": "./lib/edge/index.mjs",
         "require": "./lib/edge/index.cjs"
       },
       "bun": {
-        "types": "./types/index.d.ts",
         "import": "./lib/edge/index.mjs",
         "require": "./lib/edge/index.cjs"
       },
       "react-native": {
-        "types": "./types/index.d.ts",
         "import": "./lib/node/index.mjs",
         "require": "./lib/node/index.cjs"
       },
       "electron": {
-        "types": "./types/index.d.ts",
         "import": "./lib/node/index.mjs",
         "require": "./lib/node/index.cjs"
       },
       "default": {
-        "types": "./types/index.d.ts",
         "import": "./lib/browser/index.mjs",
         "require": "./lib/browser/index.cjs"
-      }
+      },
+      "types": "./types/index.d.ts"
     },
-    "./edge": {
-      "types": "./types/index.d.ts",
+    "./node/init": {
+      "types": "./types/esm/functions/evaluate/node-runtime/init.d.ts",
+      "import": "./lib/node/init.mjs",
+      "require": "./lib/node/init.cjs"
+    },
+    "./bundle/edge": {
       "import": "./lib/edge/index.mjs",
       "require": "./lib/edge/index.cjs"
     },
-    "./node": {
-      "types": "./types/index.d.ts",
+    "./bundle/node": {
       "import": "./lib/node/index.mjs",
       "require": "./lib/node/index.cjs"
     },
-    "./browser": {
-      "types": "./types/index.d.ts",
+    "./bundle/browser": {
       "import": "./lib/browser/index.mjs",
       "require": "./lib/browser/index.cjs"
     }
   },
   "scripts": {
-    "publish": "npm publish",
-    "types": "tsc",
-    "build": "nx run-many -p @builder.io/sdk-react-nextjs -t types build:node build:edge build:browser",
+    "release": "npm publish",
+    "build-inline-fns": "yarn g:build-inline-fns",
+    "types:cjs": "yarn tsc --p ./tsconfig.cjs.json",
+    "types:esm": "yarn tsc --p ./tsconfig.esm.json",
+    "build": "yarn g:nx run-many -p @builder.io/sdk-react-nextjs -t types:cjs types:esm build:node build:edge build:browser",
     "build:node": "SDK_ENV=node vite build --mode lib",
     "build:edge": "SDK_ENV=edge vite build --mode lib",
     "build:browser": "SDK_ENV=browser vite build --mode lib"
   },
   "peerDependencies": {
-    "next": "^13.4.20-canary.10 || ^13.4.20",
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0"
+    "next": ">=13.4.20",
+    "react": ">=18.2.0",
+    "react-dom": ">=18.2.0"
   },
   "devDependencies": {
     "@builder.io/sdks": "workspace:*",
     "@vitejs/plugin-react": "^4.0.4",
-    "next": "13.4.20-canary.10",
-    "nx": "^16.6.0",
-    "nx-cloud": "^16.2.0",
+    "next": ">=13.4.20",
     "react": "^18.2.0",
-    "rimraf": "^3.0.2",
     "typescript": "^5.1.6",
-    "vite": "^4.4.9",
-    "vite-plugin-dts": "^3.5.2"
+    "vite": "^4.5.6"
   },
   "dependencies": {
-    "lru-cache": "^10.0.0"
+    "isolated-vm": "^5.0.0"
   },
   "nx": {
     "targets": {
+      "build-inline-fns": {
+        "dependsOn": [
+          "^build:nextjs"
+        ]
+      },
       "build": {
         "dependsOn": [
+          "build-inline-fns",
           "^build:nextjs",
           "^build"
         ],
@@ -129,5 +131,6 @@
         ]
       }
     }
-  }
+  },
+  "stableVersion": "0.14.29"
 }

@@ -45,15 +45,16 @@ describe('Generate Content URL', () => {
     expect(output).toMatchSnapshot();
   });
 
-  test('generate content url with apiVersion as v2', () => {
-    const output = generateContentUrl({
-      apiKey: testKey,
-      model: testModel,
-      query: { id: testId },
-      options,
-      apiVersion: 'v2',
-    });
-    expect(output).toMatchSnapshot();
+  test('throw error when trying to generate content url with apiVersion as v1', () => {
+    expect(() => {
+      generateContentUrl({
+        apiKey: testKey,
+        model: testModel,
+        query: { id: testId },
+        options,
+        apiVersion: 'v2' as GetContentOptions['apiVersion'],
+      });
+    }).toThrow(`Invalid apiVersion: expected 'v3', received 'v2'`);
   });
 
   test('generate content url with apiVersion as v3', () => {
@@ -76,7 +77,7 @@ describe('Generate Content URL', () => {
         options,
         apiVersion: 'v1' as GetContentOptions['apiVersion'],
       });
-    }).toThrow(`Invalid apiVersion: expected 'v2' or 'v3', received 'v1'`);
+    }).toThrow(`Invalid apiVersion: expected 'v3', received 'v1'`);
   });
 
   test('throw error when trying to generate content url with an invalid apiVersion value', () => {
@@ -89,7 +90,7 @@ describe('Generate Content URL', () => {
         apiVersion: 'INVALID_API_VERSION' as GetContentOptions['apiVersion'],
       });
     }).toThrow(
-      `Invalid apiVersion: expected 'v2' or 'v3', received 'INVALID_API_VERSION'`
+      `Invalid apiVersion: expected 'v3', received 'INVALID_API_VERSION'`
     );
   });
 
@@ -106,6 +107,133 @@ describe('Generate Content URL', () => {
     const output = generateContentUrl({
       apiKey: testKey,
       model: testModel,
+    });
+    expect(output).toMatchSnapshot();
+  });
+
+  test('generate content url with limit unset and check for noTraverse', () => {
+    const output = generateContentUrl({
+      apiKey: testKey,
+      model: testModel,
+    });
+    expect(output).toMatchSnapshot();
+  });
+
+  test('generate content url with limit set to 2 and check for noTraverse', () => {
+    const output = generateContentUrl({
+      apiKey: testKey,
+      model: testModel,
+      limit: 2,
+    });
+    expect(output).toMatchSnapshot();
+  });
+
+  test('generate content url with limit set to 1 and check for noTraverse', () => {
+    const output = generateContentUrl({
+      apiKey: testKey,
+      model: testModel,
+      limit: 1,
+    });
+    expect(output).toMatchSnapshot();
+  });
+
+  test('generate content url with omit, fields, offset, includeUnpublished, cacheSeconds, staleCacheSeconds and sort combination', () => {
+    const output = generateContentUrl({
+      apiKey: testKey,
+      model: testModel,
+      omit: 'someId, some.nested.id',
+      fields: 'id, nested.property',
+      offset: 1,
+      includeUnpublished: true,
+      cacheSeconds: 5,
+      staleCacheSeconds: 10,
+      sort: {
+        updatedDate: -1,
+        createdDate: 1,
+      },
+    });
+    expect(output).toMatchSnapshot();
+  });
+
+  test('generate content url when given invalid values of offset, includeUnpublished, cacheSeconds, staleCacheSeconds', () => {
+    const output = generateContentUrl({
+      apiKey: testKey,
+      model: testModel,
+      offset: -10,
+      includeUnpublished: false,
+      cacheSeconds: -5,
+      staleCacheSeconds: -10,
+    });
+    expect(output).toMatchSnapshot();
+  });
+
+  test('generate content url with correct mongoQuery with $and as the root key', () => {
+    const output = generateContentUrl({
+      apiKey: testKey,
+      model: testModel,
+      query: {
+        $and: [
+          {
+            'some.key': {
+              $elemMatch: {
+                'some.nested.key': {
+                  $in: ['value1', 'value2'],
+                },
+              },
+            },
+          },
+          {
+            'some.other.key': {
+              $eq: 'value3',
+            },
+          },
+        ],
+      },
+    });
+    expect(output).toMatchSnapshot();
+  });
+
+  test('generate content url with correct mongoQuery with $ in child key', () => {
+    const output = generateContentUrl({
+      apiKey: testKey,
+      model: testModel,
+      query: {
+        'some.key': {
+          $elemMatch: {
+            'some.nested.key': {
+              $in: ['value1', 'value2'],
+            },
+          },
+        },
+      },
+    });
+    expect(output).toMatchSnapshot();
+  });
+
+  test('add userAttributes.locale when top-level locale option exist', () => {
+    const output = generateContentUrl({
+      apiKey: testKey,
+      model: testModel,
+      locale: 'en-US',
+    });
+    expect(output).toMatchSnapshot();
+  });
+
+  test('add options.locale in userAttributes when no locale attribute set', () => {
+    const output = generateContentUrl({
+      apiKey: testKey,
+      model: testModel,
+      userAttributes: { locale: 'en-US' },
+    });
+    expect(output).toMatchSnapshot();
+  });
+
+  test('preserves both userAttributes.locale and top-level locale when both provided', () => {
+    const output = generateContentUrl({
+      apiKey: testKey,
+      model: testModel,
+      locale: 'en-US',
+      userAttributes: { locale: 'es-ES', foo: 'bar' },
     });
     expect(output).toMatchSnapshot();
   });
