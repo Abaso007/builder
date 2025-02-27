@@ -1,6 +1,6 @@
-# Builder.io Svelte SDK (BETA)
+# Builder.io Svelte SDK
 
-This is the Svelte SDK. It is currently in beta.
+This is Builder's Svelte SDK.
 
 ## Mitosis
 
@@ -13,7 +13,7 @@ To check the status of the SDK, look at [these tables](../../README.md#feature-i
 ## Getting Started
 
 ```
-npm install @builder.io/sdk-svelte@dev
+npm install @builder.io/sdk-svelte
 ```
 
 Take a look at [our example repo](/examples/svelte/sveltekit) for how to use this SDK.

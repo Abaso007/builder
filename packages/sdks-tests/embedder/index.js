@@ -1,5 +1,4 @@
 import http from 'http';
-import { SDK_LOADED_MSG } from '../src/tests/context.js';
 
 /**
  * Very simple HTTP server that returns SDK content in an iframe to mimic the visual editor.
@@ -29,9 +28,20 @@ const server = (req, res) => {
 <html>
   <body style="margin:0px;padding:0px;overflow:hidden">
   <script>
+    const handleEventData = (event) => {
+      switch (event.data.type) {
+        case 'builder.registerComponent':
+          return 'Component name: ' + event.data.data.name;
+        case 'builder.sdkInfo':
+        case 'builder.sdkInjected':
+          return 'modelName: ' + event.data.data.modelName + ' apiKey: ' + event.data.data.apiKey;
+        default:
+          return '';
+      }
+    }
     window.addEventListener('message', (event) => {
-      if (event.data.type === 'builder.sdkInfo') {
-        console.log('${SDK_LOADED_MSG}')
+      if (event?.data?.type?.startsWith('builder.')) {
+        console.log('BUILDER_EVENT:', event.data.type, handleEventData(event));
       }
     })
   </script>

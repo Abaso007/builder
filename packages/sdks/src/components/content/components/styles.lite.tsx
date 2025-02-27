@@ -1,13 +1,14 @@
-import InlinedStyles from '../../inlined-styles.lite.jsx';
 import { useMetadata, useStore } from '@builder.io/mitosis';
+import type { BuilderNonceProp } from '../../../types/builder-props.js';
+import InlinedStyles from '../../inlined-styles.lite.jsx';
 import type { CustomFont } from './styles.helpers.js';
-import { getCss } from './styles.helpers.js';
-import { getFontCss } from './styles.helpers.js';
+import { getCss, getDefaultStyles, getFontCss } from './styles.helpers.js';
 
-interface Props {
+interface Props extends BuilderNonceProp {
   cssCode?: string;
   customFonts?: CustomFont[];
   contentId?: string;
+  isNestedRender?: boolean;
 }
 
 useMetadata({
@@ -21,21 +22,15 @@ export default function ContentStyles(props: Props) {
     injectedStyles: `
 ${getCss({ cssCode: props.cssCode, contentId: props.contentId })}
 ${getFontCss({ customFonts: props.customFonts })}
-
-.builder-text > p:first-of-type, .builder-text > .builder-paragraph:first-of-type {
-  margin: 0;
-}
-.builder-text > p, .builder-text > .builder-paragraph {
-  color: inherit;
-  line-height: inherit;
-  letter-spacing: inherit;
-  font-weight: inherit;
-  font-size: inherit;
-  text-align: inherit;
-  font-family: inherit;
-}
+${getDefaultStyles(props.isNestedRender)}
 `.trim(),
   });
 
-  return <InlinedStyles styles={state.injectedStyles} />;
+  return (
+    <InlinedStyles
+      styles={state.injectedStyles}
+      id="builderio-content"
+      nonce={props.nonce}
+    />
+  );
 }

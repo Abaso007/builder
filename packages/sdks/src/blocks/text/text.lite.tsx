@@ -1,4 +1,13 @@
-export default function Text(props: { text?: string }) {
+import { useMetadata } from '@builder.io/mitosis';
+import type { TextProps } from './text.types.js';
+
+useMetadata({
+  angular: {
+    changeDetection: 'OnPush',
+  },
+});
+
+export default function Text(props: TextProps) {
   return (
     <div
       class={

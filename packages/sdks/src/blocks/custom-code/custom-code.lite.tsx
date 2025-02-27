@@ -1,9 +1,20 @@
-import { useMetadata } from '@builder.io/mitosis';
-import { onMount, useRef, useStore } from '@builder.io/mitosis';
+import {
+  onMount,
+  onUpdate,
+  useMetadata,
+  useRef,
+  useStore,
+  useTarget,
+} from '@builder.io/mitosis';
+import { isEditing } from '../../functions/is-editing.js';
+import { logger } from '../../helpers/logger.js';
 
 useMetadata({
   rsc: {
     componentType: 'client',
+  },
+  angular: {
+    changeDetection: 'OnPush',
   },
 });
 
@@ -13,44 +24,61 @@ export interface CustomCodeProps {
 }
 
 export default function CustomCode(props: CustomCodeProps) {
-  const elem = useRef<HTMLDivElement>();
+  const elementRef = useRef<HTMLDivElement>();
 
   const state = useStore({
     scriptsInserted: [] as string[],
     scriptsRun: [] as string[],
+    runScripts: () => {
+      if (
+        !elementRef ||
+        !elementRef?.getElementsByTagName ||
+        typeof window === 'undefined'
+      ) {
+        return;
+      }
 
-    findAndRunScripts() {
-      // TODO: Move this function to standalone one in '@builder.io/utils'
-      if (elem && elem.getElementsByTagName && typeof window !== 'undefined') {
-        const scripts = elem.getElementsByTagName('script');
-        for (let i = 0; i < scripts.length; i++) {
-          const script = scripts[i];
-          if (script.src) {
-            if (state.scriptsInserted.includes(script.src)) {
-              continue;
-            }
-            state.scriptsInserted.push(script.src);
-            const newScript = document.createElement('script');
-            newScript.async = true;
-            newScript.src = script.src;
-            document.head.appendChild(newScript);
-          } else if (
-            !script.type ||
-            [
-              'text/javascript',
-              'application/javascript',
-              'application/ecmascript',
-            ].includes(script.type)
-          ) {
-            if (state.scriptsRun.includes(script.innerText)) {
-              continue;
-            }
-            try {
-              state.scriptsRun.push(script.innerText);
-              new Function(script.innerText)();
-            } catch (error) {
-              console.warn('`CustomCode`: Error running script:', error);
-            }
+      const scripts = elementRef.getElementsByTagName('script');
+      for (let i = 0; i < scripts.length; i++) {
+        const script = scripts[i];
+        if (script.src) {
+          if (state.scriptsInserted.includes(script.src)) {
+            continue;
+          }
+          state.scriptsInserted.push(script.src);
+          const newScript = document.createElement('script');
+          newScript.async = true;
+          newScript.src = script.src;
+          document.head.appendChild(newScript);
+        } else if (
+          !script.type ||
+          [
+            'text/javascript',
+            'application/javascript',
+            'application/ecmascript',
+          ].includes(script.type)
+        ) {
+          if (state.scriptsRun.includes(script.innerText)) {
+            continue;
+          }
+          try {
+            useTarget({
+              angular: () => {
+                requestAnimationFrame(() => {
+                  state.scriptsRun.push(script.innerText);
+                  new Function(script.innerText)();
+                });
+              },
+              default: () => {
+                state.scriptsRun.push(script.innerText);
+                new Function(script.innerText)();
+              },
+            });
+          } catch (error) {
+            logger.warn(
+              '[BUILDER.IO] `CustomCode`: Error running script:',
+              error
+            );
           }
         }
       }
@@ -58,12 +86,32 @@ export default function CustomCode(props: CustomCodeProps) {
   });
 
   onMount(() => {
-    state.findAndRunScripts();
+    state.runScripts();
   });
+
+  onUpdate(() => {
+    if (isEditing()) {
+      useTarget({
+        svelte: () => {
+          setTimeout(() => {
+            state.runScripts();
+          }, 0);
+        },
+        vue: () => {
+          setTimeout(() => {
+            state.runScripts();
+          }, 0);
+        },
+        default: () => {
+          state.runScripts();
+        },
+      });
+    }
+  }, [props.code]);
 
   return (
     <div
-      ref={elem}
+      ref={elementRef}
       class={
         'builder-custom-code' + (props.replaceNodes ? ' replace-nodes' : '')
       }

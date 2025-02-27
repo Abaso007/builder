@@ -1,15 +1,26 @@
-import type { CanTrack } from '../types/can-track.js';
-import type { OrgId } from './document-cookie';
-import { logger } from './logger.js';
+// polyfill `regenerator-runtime` for `react-native-storage`
+import 'regenerator-runtime/runtime.js';
 
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
 import Storage from 'react-native-storage';
 import { isBrowser } from '../functions/is-browser.js';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import type { CanTrack } from '../types/can-track.js';
+import { logger } from './logger.js';
 
 const ONE_DAY = 1000 * 60 * 60 * 24;
 
 const initStorage = () => {
-  const backend = isBrowser() ? window.localStorage : AsyncStorage;
+  const backend =
+    Platform.OS === 'web'
+      ? isBrowser()
+        ? // web
+          window?.localStorage
+        : // static rendering/SSR in expo 50+
+          undefined
+      : // non-web (iOS/Android)
+        AsyncStorage;
+
   const storage = new Storage({
     // maximum capacity, default 1000 key-ids
     size: 1000,
@@ -21,9 +32,6 @@ const initStorage = () => {
     // expire time, default: 1 day (1000 * 3600 * 24 milliseconds).
     // can be null, which means never expire.
     defaultExpires: ONE_DAY * 30,
-
-    // cache data in the memory. default is true.
-    enableCache: true,
   });
 
   return storage;
@@ -34,15 +42,18 @@ const storage = initStorage();
 const getStorageName = (name: string) => `builderio.${name}`;
 
 // stub, never called, but needed to fix bundling.
-export const getCookieSync = () => {};
+export const getCookieSync = (
+  _: {
+    name: string;
+  } & CanTrack
+): any => {};
 
 export const getCookie = async ({
   name,
   canTrack,
 }: {
   name: string;
-} & CanTrack &
-  OrgId) => {
+} & CanTrack) => {
   try {
     if (!canTrack) {
       return undefined;
@@ -71,13 +82,21 @@ export const setCookie = async ({
   name: string;
   value: string;
   expires?: Date;
-} & CanTrack &
-  OrgId) => {
+} & CanTrack) => {
   try {
     if (!canTrack) {
       return undefined;
     }
-    await storage.save({ key: getStorageName(name), data: { value }, expires });
+    // convert `expires` date to number representing milliseconds from now until the date
+    const expiresAsNumber = expires
+      ? expires.getTime() - Date.now()
+      : undefined;
+
+    await storage.save({
+      key: getStorageName(name),
+      data: { value },
+      expires: expiresAsNumber,
+    });
   } catch (err) {
     if (err?.name !== 'NotFoundError') {
       logger.warn('[COOKIE] SET error: ', err?.message || err);

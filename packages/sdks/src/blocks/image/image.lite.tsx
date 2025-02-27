@@ -1,32 +1,13 @@
 import { Show, useMetadata, useStore } from '@builder.io/mitosis';
 import type { JSX } from '@builder.io/mitosis/jsx-runtime';
-import type { BuilderBlock } from '../../types/builder-block.js';
 import { getSrcSet } from './image.helpers.js';
+import type { ImageProps } from './image.types.js';
 
 useMetadata({
   rsc: {
     componentType: 'client',
   },
 });
-
-export interface ImageProps {
-  className?: string;
-  image: string;
-  sizes?: string;
-  lazy?: boolean;
-  height?: number;
-  width?: number;
-  altText?: string;
-  backgroundSize?: 'cover' | 'contain';
-  backgroundPosition?: string;
-  srcset?: string;
-  aspectRatio?: number;
-  children?: JSX.Element;
-  fitContent?: boolean;
-  builderBlock?: BuilderBlock;
-  noWebp?: boolean;
-  src?: string;
-}
 
 export default function Image(props: ImageProps) {
   const state = useStore({
@@ -37,9 +18,16 @@ export default function Image(props: ImageProps) {
         !url ||
         // We can auto add srcset for cdn.builder.io and shopify
         // images, otherwise you can supply this prop manually
-        !(url.match(/builder\.io/) || url.match(/cdn\.shopify\.com/))
+        !(
+          typeof url === 'string' &&
+          (url.match(/builder\.io/) || url.match(/cdn\.shopify\.com/))
+        )
       ) {
         return props.srcset;
+      }
+
+      if (props.noWebp) {
+        return undefined; // no need to add srcset to svg images
       }
 
       if (props.srcset && props.image?.includes('builder.io/api/v1/image')) {
@@ -77,6 +65,7 @@ export default function Image(props: ImageProps) {
       return out;
     },
   });
+
   return (
     <>
       <picture>
@@ -84,9 +73,10 @@ export default function Image(props: ImageProps) {
           <source srcset={state.webpSrcSet} type="image/webp" />
         </Show>
         <img
-          loading="lazy"
+          loading={props.highPriority ? 'eager' : 'lazy'}
+          fetchpriority={props.highPriority ? 'high' : 'auto'}
           alt={props.altText}
-          role={props.altText ? 'presentation' : undefined}
+          role={props.altText ? undefined : 'presentation'}
           css={{
             opacity: '1',
             transition: 'opacity 0.2s ease-in-out',
@@ -131,7 +121,7 @@ export default function Image(props: ImageProps) {
       </Show>
 
       {/* When `fitContent: false`, we wrap image children ssuch that they stretch across the entire image  */}
-      <Show when={!props.fitContent && props.children}>
+      <Show when={!props.fitContent && props.builderBlock?.children?.length}>
         <div
           css={{
             display: 'flex',

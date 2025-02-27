@@ -1,36 +1,37 @@
+import {
+  Show,
+  onInit,
+  setContext,
+  useMetadata,
+  useState,
+  useStore,
+  useTarget,
+} from '@builder.io/mitosis';
 import { getDefaultRegisteredComponents } from '../../constants/builder-registered-components.js';
+import { TARGET } from '../../constants/target.js';
+import ComponentsContext from '../../context/components.context.lite.js';
 import type {
   BuilderContextInterface,
   BuilderRenderState,
   RegisteredComponents,
 } from '../../context/types.js';
-import {
-  components,
-  serializeComponentInfo,
-} from '../../functions/register-component.js';
-import Blocks from '../blocks/blocks.lite.jsx';
-import ContentStyles from './components/styles.lite.jsx';
-import {
-  Show,
-  useStore,
-  useMetadata,
-  useState,
-  setContext,
-} from '@builder.io/mitosis';
-import type { ContentProps } from './content.types.js';
-import {
-  getContentInitialValue,
-  getContextStateInitialValue,
-} from './content.helpers.js';
-import { TARGET } from '../../constants/target.js';
-import { getRenderContentScriptString } from '../content-variants/helpers.js';
-import { useTarget } from '@builder.io/mitosis';
-import EnableEditor from './components/enable-editor.lite.jsx';
-import InlinedScript from '../inlined-script.lite.jsx';
-import { wrapComponentRef } from './wrap-component-ref.js';
+import { evaluate } from '../../functions/evaluate/evaluate.js';
+import { serializeIncludingFunctions } from '../../functions/register-component.js';
+import { logger } from '../../helpers/logger.js';
 import type { ComponentInfo } from '../../types/components.js';
 import type { Dictionary } from '../../types/typescript.js';
-import ComponentsContext from '../../context/components.context.lite.js';
+import Blocks from '../blocks/blocks.lite.jsx';
+import { getUpdateVariantVisibilityScript } from '../content-variants/helpers.js';
+import DynamicDiv from '../dynamic-div.lite.jsx';
+import InlinedScript from '../inlined-script.lite.jsx';
+import EnableEditor from './components/enable-editor.lite.jsx';
+import ContentStyles from './components/styles.lite.jsx';
+import {
+  getContentInitialValue,
+  getRootStateInitialValue,
+} from './content.helpers.js';
+import type { ContentProps } from './content.types.js';
+import { wrapComponentRef } from './wrap-component-ref.js';
 
 useMetadata({
   qwik: {
@@ -43,7 +44,7 @@ useMetadata({
 
 export default function ContentComponent(props: ContentProps) {
   const state = useStore({
-    scriptStr: getRenderContentScriptString({
+    scriptStr: getUpdateVariantVisibilityScript({
       // eslint-disable-next-line @typescript-eslint/no-non-null-assertion, @typescript-eslint/no-non-null-asserted-optional-chain
       variationId: props.content?.testVariationId!,
       // eslint-disable-next-line @typescript-eslint/no-non-null-assertion, @typescript-eslint/no-non-null-asserted-optional-chain
@@ -55,22 +56,16 @@ export default function ContentComponent(props: ContentProps) {
 
     registeredComponents: [
       ...getDefaultRegisteredComponents(),
-      // While this `components` object is deprecated, we must maintain support for it.
-      // Since users are able to override our default components, we need to make sure that we do not break such
-      // existing usage.
-      // This is why we spread `components` after the default Builder.io components, but before the `props.customComponents`,
-      // which is the new standard way of providing custom components, and must therefore take precedence.
-      ...components,
       ...(props.customComponents || []),
     ].reduce<RegisteredComponents>(
       (acc, { component, ...info }) => ({
         ...acc,
         [info.name]: {
           component: useTarget({
-            vue3: wrapComponentRef(component),
+            vue: wrapComponentRef(component),
             default: component,
           }),
-          ...serializeComponentInfo(info),
+          ...serializeIncludingFunctions(info),
         },
       }),
       {}
@@ -91,7 +86,7 @@ export default function ContentComponent(props: ContentProps) {
           data: props.data,
         }),
         localState: undefined,
-        rootState: getContextStateInitialValue({
+        rootState: getRootStateInitialValue({
           content: props.content,
           data: props.data,
           locale: props.locale,
@@ -102,25 +97,30 @@ export default function ContentComponent(props: ContentProps) {
           default: state.contentSetState,
         }),
         context: props.context || {},
+        canTrack: props.canTrack,
         apiKey: props.apiKey,
         apiVersion: props.apiVersion,
         componentInfos: [
           ...getDefaultRegisteredComponents(),
-          // While this `components` object is deprecated, we must maintain support for it.
-          // Since users are able to override our default components, we need to make sure that we do not break such
-          // existing usage.
-          // This is why we spread `components` after the default Builder.io components, but before the `props.customComponents`,
-          // which is the new standard way of providing custom components, and must therefore take precedence.
-          ...components,
           ...(props.customComponents || []),
         ].reduce<Dictionary<ComponentInfo>>(
           (acc, { component: _, ...info }) => ({
             ...acc,
-            [info.name]: serializeComponentInfo(info),
+            [info.name]: serializeIncludingFunctions(info),
           }),
           {}
         ),
         inheritedStyles: {},
+        BlocksWrapper: useTarget({
+          // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+          // @ts-ignore
+          reactNative: props.blocksWrapper || ScrollView,
+          angular: props.blocksWrapper || DynamicDiv,
+          default: props.blocksWrapper || 'div',
+        }),
+        BlocksWrapperProps: props.blocksWrapperProps || {},
+        nonce: props.nonce || '',
+        model: props.model,
       },
       { reactive: true }
     );
@@ -129,34 +129,93 @@ export default function ContentComponent(props: ContentProps) {
     registeredComponents: state.registeredComponents,
   });
 
+  onInit(() => {
+    if (!props.apiKey) {
+      logger.error(
+        'No API key provided to `Content` component. This can cause issues. Please provide an API key using the `apiKey` prop.'
+      );
+    }
+
+    // run any dynamic JS code attached to content
+    const jsCode = builderContextSignal.value.content?.data?.jsCode;
+
+    if (jsCode) {
+      evaluate({
+        code: jsCode,
+        context: props.context || {},
+        localState: undefined,
+        rootState: builderContextSignal.value.rootState,
+        rootSetState: (newState) => {
+          useTarget({
+            vue: () => {
+              builderContextSignal.value.rootState = newState;
+            },
+            solid: () => {
+              builderContextSignal.value.rootState = newState;
+            },
+            react: () => {
+              Object.assign(builderContextSignal.value.rootState, newState);
+            },
+            reactNative: () => {
+              builderContextSignal.value.rootState = newState;
+            },
+            rsc: () => {
+              builderContextSignal.value.rootState = newState;
+            },
+            default: () => {
+              builderContextSignal.value.rootSetState?.(newState);
+            },
+          });
+        },
+        isExpression: false,
+      });
+    }
+  });
+
   return (
     <EnableEditor
+      apiHost={props.apiHost}
+      nonce={props.nonce}
       content={props.content}
+      data={props.data}
       model={props.model}
       context={props.context}
       apiKey={props.apiKey}
       canTrack={props.canTrack}
       locale={props.locale}
-      includeRefs={props.includeRefs}
       enrich={props.enrich}
-      classNameProp={props.classNameProp}
       showContent={props.showContent}
       builderContextSignal={builderContextSignal}
+      contentWrapper={props.contentWrapper}
+      contentWrapperProps={props.contentWrapperProps}
+      trustedHosts={props.trustedHosts}
+      isNestedRender={props.isNestedRender}
       {...useTarget({
         // eslint-disable-next-line object-shorthand
         react: { setBuilderContextSignal: setBuilderContextSignal },
-        // eslint-disable-next-line object-shorthand
-        reactNative: { setBuilderContextSignal: setBuilderContextSignal },
+        reactNative: {
+          // eslint-disable-next-line object-shorthand
+          setBuilderContextSignal: setBuilderContextSignal,
+          // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+          // @ts-ignore
+          strictStyleMode: props.strictStyleMode,
+        },
         // eslint-disable-next-line object-shorthand
         solid: { setBuilderContextSignal: setBuilderContextSignal },
         default: {},
       })}
     >
       <Show when={props.isSsrAbTest}>
-        <InlinedScript scriptStr={state.scriptStr} />
+        <InlinedScript
+          scriptStr={state.scriptStr}
+          id="builderio-variant-visibility"
+          nonce={props.nonce || ''}
+        />
       </Show>
       <Show when={TARGET !== 'reactNative'}>
         <ContentStyles
+          nonce={props.nonce || ''}
+          isNestedRender={props.isNestedRender}
           contentId={builderContextSignal.value.content?.id}
           cssCode={builderContextSignal.value.content?.data?.cssCode}
           customFonts={builderContextSignal.value.content?.data?.customFonts}
@@ -166,6 +225,7 @@ export default function ContentComponent(props: ContentProps) {
         blocks={builderContextSignal.value.content?.data?.blocks}
         context={builderContextSignal}
         registeredComponents={state.registeredComponents}
+        linkComponent={props.linkComponent}
       />
     </EnableEditor>
   );

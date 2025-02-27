@@ -1,6 +1,3 @@
-import BlockStyles from '../block/components/block-styles.lite.jsx';
-import Block from '../block/block.lite.jsx';
-import type { Signal } from '@builder.io/mitosis';
 import {
   For,
   Show,
@@ -8,19 +5,11 @@ import {
   useMetadata,
   useTarget,
 } from '@builder.io/mitosis';
-import type { BlocksWrapperProps } from './blocks-wrapper.lite.jsx';
-import BlocksWrapper from './blocks-wrapper.lite.jsx';
-import type {
-  BuilderContextInterface,
-  RegisteredComponents,
-} from '../../context/types.js';
 import BuilderContext from '../../context/builder.context.lite.js';
 import ComponentsContext from '../../context/components.context.lite.js';
-
-export type BlocksProps = Partial<BlocksWrapperProps> & {
-  context?: Signal<BuilderContextInterface>;
-  registeredComponents?: RegisteredComponents;
-};
+import Block from '../block/block.lite.jsx';
+import BlocksWrapper from './blocks-wrapper.lite.jsx';
+import type { BlocksProps } from './blocks.types.js';
 
 useMetadata({
   rsc: {
@@ -38,16 +27,25 @@ export default function Blocks(props: BlocksProps) {
       parent={props.parent}
       path={props.path}
       styleProp={props.styleProp}
+      BlocksWrapper={useTarget({
+        rsc: props.context?.value?.BlocksWrapper,
+        default:
+          props.context?.value?.BlocksWrapper ||
+          builderContext.value?.BlocksWrapper,
+      })}
+      BlocksWrapperProps={useTarget({
+        rsc: props.context?.value?.BlocksWrapperProps,
+        default:
+          props.context?.value?.BlocksWrapperProps ||
+          builderContext.value?.BlocksWrapperProps,
+      })}
+      classNameProp={props.className}
     >
-      {/**
-       * We need to run two separate loops for content + styles to workaround the fact that Vue 2
-       * does not support multiple root elements.
-       */}
       <Show when={props.blocks}>
         <For each={props.blocks}>
           {(block) => (
             <Block
-              key={'render-block-' + block.id}
+              key={block.id}
               block={block}
               context={useTarget({
                 rsc: props.context,
@@ -57,22 +55,9 @@ export default function Blocks(props: BlocksProps) {
                 rsc: props.registeredComponents,
                 default:
                   props.registeredComponents ||
-                  componentsContext.registeredComponents,
+                  componentsContext?.registeredComponents,
               })}
-            />
-          )}
-        </For>
-      </Show>
-      <Show when={props.blocks}>
-        <For each={props.blocks}>
-          {(block) => (
-            <BlockStyles
-              key={'block-style-' + block.id}
-              block={block}
-              context={useTarget({
-                rsc: props.context?.value,
-                default: props.context?.value || builderContext.value,
-              })}
+              linkComponent={props.linkComponent}
             />
           )}
         </For>

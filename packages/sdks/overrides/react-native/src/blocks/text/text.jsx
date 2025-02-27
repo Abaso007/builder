@@ -1,5 +1,6 @@
+import { RenderHTML } from '@builder.io/react-native-render-html';
 import * as React from 'react';
-import HTML from 'react-native-render-html';
+import { useWindowDimensions } from 'react-native';
 import BuilderContext from '../../context/builder.context';
 
 /**
@@ -7,8 +8,12 @@ import BuilderContext from '../../context/builder.context';
  */
 
 /**
- * 
- * @param {string} string 
+ * @typedef {{}} BuilderContext
+ */
+
+/**
+ *
+ * @param {string} string
  * @returns {string}
  */
 function camelToKebabCase(string) {
@@ -16,9 +21,9 @@ function camelToKebabCase(string) {
 }
 
 /**
- * 
- * @param {object} object 
- * @param {string[]} keys 
+ *
+ * @param {object} object
+ * @param {string[]} keys
  * @returns {object}
  */
 function pick(object, keys) {
@@ -34,14 +39,14 @@ function pick(object, keys) {
 const PICK_STYLES = ['textAlign'];
 
 /**
- * @param {BuilderBlock} block 
- * @returns 
+ * @param {BuilderBlock} block
+ * @returns
  */
 function getBlockStyles(block) {
   // TODO: responsive CSS using react native viewport width hooks
   const styles = {
     ...block.responsiveStyles?.large,
-    ...(block).styles,
+    ...block.styles,
   };
 
   if (block.responsiveStyles?.medium) {
@@ -55,15 +60,15 @@ function getBlockStyles(block) {
 }
 
 /**
- * 
- * @param {BuilderBlock} block 
- * @param {any} inheritedStyles 
- * @returns 
+ *
+ * @param {BuilderBlock} block
+ * @param {any} inheritedStyles
+ * @returns
  */
 function getCss(block, inheritedStyles) {
   const styleObject = {
     ...inheritedStyles,
-    ...pick(getBlockStyles(block), PICK_STYLES)
+    ...pick(getBlockStyles(block), PICK_STYLES),
   };
   if (!styleObject) {
     return '';
@@ -82,18 +87,19 @@ function getCss(block, inheritedStyles) {
 }
 
 /**
- * 
- * @param {{ text: string; builderBlock: BuilderBlock}} props 
- * @returns 
+ *
+ * @param {{ text: string; builderBlock: BuilderBlock, builderContext: BuilderContext}} props
+ * @returns
  */
 export default function Text(props) {
-  const builderContext = React.useContext(BuilderContext);
+  const { width } = useWindowDimensions();
+  const context = React.useContext(BuilderContext);
+
   return (
-    <HTML
+    <RenderHTML
+      contentWidth={width}
       source={{
-        html: `<div style="${getCss(props.builderBlock, builderContext.inheritedStyles)}">${
-          props.text || ''
-        }</div>`,
+        html: `<div style="${getCss(props.builderBlock, context.inheritedStyles)}">${props.text?.toString() || ''}</div>`,
       }}
     />
   );

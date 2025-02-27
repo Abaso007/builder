@@ -1,17 +1,70 @@
-import { getAPIKey, getProps } from '@e2e/tests';
-import { BuilderComponent, builder } from '@builder.io/react';
+import { Builder, BuilderComponent, builder } from '@builder.io/react';
+import { getAPIKey, getProps, PAGES } from '@sdk/tests';
 import { useEffect, useState } from 'react';
 
+import '@builder.io/widgets';
+import { ComponentWithLocalizedSubfields } from './components/ComponentWithLocalizedSubfields';
+
+if (typeof window !== 'undefined') {
+  const pathname = window.location.pathname;
+  if (pathname.includes('can-track-false-pre-init')) {
+    builder.canTrack = false;
+  }
+}
+
 builder.init(getAPIKey());
+
 // default to not tracking, and re-enable when appropriate
 builder.canTrack = false;
+
+if (
+  typeof window !== 'undefined' &&
+  !window.location.pathname.includes('can-track-false') &&
+  !window.location.pathname.includes('symbol-tracking')
+) {
+  builder.canTrack = true;
+}
+Builder.registerComponent(ComponentWithLocalizedSubfields, {
+  name: 'ComponentWithLocalizedSubfields',
+  inputs: [
+    {
+      name: 'texts',
+      type: 'array',
+      subFields: [
+        {
+          name: 'text1',
+          type: 'text',
+        },
+        {
+          name: 'text2',
+          type: 'text',
+        },
+      ],
+    },
+  ],
+});
 
 function App() {
   const [props, setProps] = useState<any>(undefined);
 
   useEffect(() => {
-    getProps({}).then(resp => {
+    getProps({ sdk: 'oldReact' }).then(resp => {
       setProps(resp);
+      if (
+        window.location.pathname.includes('get-query') ||
+        window.location.pathname.includes('get-content')
+      ) {
+        if (resp?.apiEndpoint) {
+          builder.apiEndpoint = resp.apiEndpoint;
+        }
+        builder
+          .get('', {
+            ...resp,
+            ...resp['options'],
+          })
+          .promise()
+          .then();
+      }
     });
   }, []);
 
@@ -19,16 +72,21 @@ function App() {
     builder.apiVersion = props?.apiVersion;
   }
 
-  // only enable tracking if we're not in the `/can-track-false` test route
-  useEffect(() => {
-    if (!window.location.pathname.includes('can-track-false')) {
-      builder.canTrack = true;
-    }
-  }, []);
+  if (props?.apiEndpoint) {
+    builder.apiEndpoint = props.apiEndpoint;
+  }
 
-  // issues with react types incompatibility (v16 vs v17 vs v18?)
-  // @ts-ignore
-  return props ? <BuilderComponent {...props} /> : <div>Content Not Found</div>;
+  if (props?.trustedHosts) {
+    Builder.trustedHosts = props.trustedHosts;
+  }
+
+  return PAGES[window.location.pathname]?.isGen1VisualEditingTest ? (
+    <BuilderComponent model="page" {...props} />
+  ) : props ? (
+    <BuilderComponent {...props} />
+  ) : (
+    <div>Content Not Found</div>
+  );
 }
 
 export default App;
