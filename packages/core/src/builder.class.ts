@@ -3090,7 +3090,7 @@ export class Builder {
     }
 
     const key =
-      (options.key || Builder.isBrowser || options.fetchTotalCount)
+      options.key || Builder.isBrowser || options.fetchTotalCount
         ? `${modelName}:${hash(omit(options, 'initialContent', 'req', 'res'))}`
         : undefined;
 
