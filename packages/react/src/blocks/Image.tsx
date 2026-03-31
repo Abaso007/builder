@@ -298,11 +298,15 @@ class ImageComponent extends React.Component<any, { imageLoaded: boolean; load: 
     const children = this.props.builderBlock && this.props.builderBlock.children;
 
     let srcset = this.props.srcset;
-    const sizes = getSizes(
+    const sizesComputed = getSizes(
       this.props.sizes,
       builderBlock,
       builderState?.context.builderContent?.meta?.breakpoints || {}
     );
+    // Prepend "auto" only for auto-calculated sizes on lazy-loaded images so
+    // browsers that support it use the rendered width.
+    const shouldPrependAuto = !this.props.sizes && !this.loadEagerly;
+    const sizes = shouldPrependAuto ? `auto, ${sizesComputed}` : sizesComputed;
     const image = this.image;
 
     if (srcset && image && image.includes('builder.io/api/v1/image')) {
@@ -384,7 +388,11 @@ class ImageComponent extends React.Component<any, { imageLoaded: boolean; load: 
               ) : (
                 <picture ref={ref => (this.pictureRef = ref)}>
                   {srcset && srcset.match(/builder\.io/) && !this.props.noWebp && (
-                    <source srcSet={srcset.replace(/\?/g, '?format=webp&')} type="image/webp" />
+                    <source
+                      srcSet={srcset.replace(/\?/g, '?format=webp&')}
+                      type="image/webp"
+                      sizes={sizes || undefined}
+                    />
                   )}
                   {imageContents}
                 </picture>
