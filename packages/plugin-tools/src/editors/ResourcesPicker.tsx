@@ -65,11 +65,14 @@ export const ResourcePreviewCell: React.FC<ResourcePreviewCellProps> = props =>
         primary={
           <div
             css={{
-              maxWidth: 400,
+              width: '100%',
               overflow: 'hidden',
               textOverflow: 'ellipsis',
               whiteSpace: 'nowrap',
             }}
+            title={props.resource.title !== 'untitled'
+              ? `${props.resource.title} - ${props.resource.id}`
+              : props.resource.title}
           >
             {props.resource.title !== 'untitled' ? (
               <div>
