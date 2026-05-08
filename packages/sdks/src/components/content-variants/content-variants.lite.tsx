@@ -91,12 +91,7 @@ export default function ContentVariants(props: VariantsProviderProps) {
 
   return (
     <>
-      <Show
-        when={
-          !props.isNestedRender &&
-          TARGET !== 'reactNative'
-        }
-      >
+      <Show when={!props.isNestedRender && TARGET !== 'reactNative'}>
         <InlinedScript
           scriptStr={removeDuplicateScript(
             'builderio-init-variants-fns',
